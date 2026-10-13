@@ -149,7 +149,7 @@
     <div class="info">Drop a photo on another to swap them, or between two photos to insert it there.</div>
     <label>Sort photos
       <select id="sort">
-        <option value="">Choose…</option>
+        <option value="custom" disabled>Custom order</option>
         <option value="name-asc">Name (A-Z)</option>
         <option value="name-desc">Name (Z-A)</option>
         <option value="date-asc">Date taken (oldest first)</option>
@@ -236,7 +236,7 @@ const FONT = 'system-ui, -apple-system, sans-serif';
 
 const DEFAULT_SETTINGS = {
   layout: 'g2x3', look: 'clean', fit: 'cover', orientation: 'portrait', margin: 10, gap: 4, bg: '#ffffff', captions: false,
-  pageNotes: 'none', pageNoteSize: 40, photoNotes: 'off', photoNoteSize: 14, noteLines: 'lines', zoom: 0.5,
+  pageNotes: 'none', pageNoteSize: 40, photoNotes: 'off', photoNoteSize: 14, noteLines: 'lines', sort: 'date-asc', zoom: 0.5,
 };
 
 let folderName = null;
@@ -516,6 +516,7 @@ function applyList(name, entries, savedState) {
     baseOrder = project?.order || [];
     baseHidden = new Set(project?.hidden || []);
     settings = withDefaults(project?.settings);
+    if (project && !project.settings?.sort) settings.sort = 'custom';
     notes = { photo: {}, page: {}, ...project?.notes };
     crops = { ...project?.crops };
   }
@@ -532,6 +533,7 @@ function applyList(name, entries, savedState) {
   save();
   if (newFolder) syncControls();
   render();
+  applySort();
 }
 
 let listSource = null;
@@ -955,8 +957,15 @@ function swapPhotos(from, to) {
   if (from === to || !items[to]) return;
   const a = order.indexOf(items[from]), b = order.indexOf(items[to]);
   [order[a], order[b]] = [order[b], order[a]];
-  save();
+  arrangedByHand();
   animateChange(render);
+}
+
+function arrangedByHand() {
+  settings.sort = 'custom';
+  sortRun++;
+  syncControls();
+  save();
 }
 
 // "to" is the gap index: 0 is before the first photo, items.length after the last
@@ -967,7 +976,7 @@ function insertPhoto(from, to) {
   const before = items[to];
   order.splice(order.indexOf(name), 1);
   order.splice(before ? order.indexOf(before) : order.length, 0, name);
-  save();
+  arrangedByHand();
   animateChange(render);
 }
 
@@ -1150,20 +1159,42 @@ async function dateTaken(file) {
   return earliest === Infinity ? file.lastModified : earliest;
 }
 
-const SORTS = {
-  name: { label: 'name', key: () => 0 },
-  date: { label: 'date taken', key: name => dateTaken(photos.get(name).file) },
+const SORT_KEYS = {
+  name: () => 0,
+  date: name => {
+    const photo = photos.get(name);
+    photo.taken ??= dateTaken(photo.file);
+    return photo.taken;
+  },
 };
 
-$('sort').addEventListener('change', async e => {
-  const [by, direction] = e.target.value.split('-');
-  e.target.value = '';
-  if (!folderName || !SORTS[by] || !confirm(`Replace your custom order by sorting by ${SORTS[by].label}?`)) return;
-  const keys = new Map(await Promise.all(order.map(async n => [n, await SORTS[by].key(n)])));
+async function sortedOrder(sort) {
+  const [by, direction] = sort.split('-');
+  const keys = new Map(await Promise.all(order.map(async n => [n, await SORT_KEYS[by](n)])));
   const sign = direction === 'desc' ? -1 : 1;
-  order.sort((a, b) => sign * (keys.get(a) - keys.get(b) || byName(a, b)));
+  return [...order].sort((a, b) => sign * (keys.get(a) - keys.get(b) || byName(a, b)));
+}
+
+// keeps the order sorted until the user arranges photos by hand
+let sortRun = 0;
+async function applySort(animate = false) {
+  if (!folderName || settings.sort === 'custom') return;
+  const run = ++sortRun;
+  const next = await sortedOrder(settings.sort);
+  if (run !== sortRun || settings.sort === 'custom') return;
+  if (next.length !== order.length) return applySort(animate);
+  if (next.join('\n') === order.join('\n')) return;
+  order = next;
   save();
-  animateChange(render);
+  animate ? animateChange(render) : render();
+}
+
+$('sort').addEventListener('change', e => {
+  if (!folderName) return syncControls();
+  if (settings.sort === 'custom' && !confirm('Replace your custom order with this sorting?')) return syncControls();
+  settings.sort = e.target.value;
+  save();
+  applySort(true);
 });
 
 // ---------- projects ----------
@@ -1179,9 +1210,11 @@ function openProject(name) {
   crops = { ...project.crops };
   cropping = null;
   settings = withDefaults(project.settings);
+  if (!project.settings?.sort) settings.sort = 'custom';
   save();
   syncControls();
   render();
+  applySort();
 }
 
 function askProjectName(question, suggestion) {
@@ -1250,6 +1283,7 @@ function syncControls() {
   }
   $('pageNoteSize').disabled = settings.pageNotes === 'none';
   $('photoNoteSize').disabled = settings.photoNotes !== 'below';
+  $('sort').value = settings.sort;
   syncProjects();
 }
 
