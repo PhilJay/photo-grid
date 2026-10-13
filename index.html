@@ -158,9 +158,10 @@
   </div>
 
   <div class="group">
-    <button class="primary" id="export-jpg">Export pages</button>
-    <button id="print">Print / Save as PDF</button>
-    <div class="info" id="export-info">Saves one A4 JPG per page at 300 dpi plus a zip of all pages into <b>export/&lt;project&gt;</b> inside your photo folder. For PDF choose "Save as PDF" in the print dialog.</div>
+    <button class="primary" id="export-pdf">Export PDF</button>
+    <button id="export-jpg">Export JPG pages + zip</button>
+    <button id="print">Print…</button>
+    <div class="info">Exports use the full-quality photos at 300 dpi and go into <b>export/&lt;project&gt;</b> inside your photo folder.</div>
   </div>
 </aside>
 
@@ -1351,20 +1352,21 @@ const EXPORTED_FILE = /-page-\d+\.jpg$|-pages\.zip$/;
 
 const fileSafe = name => name.replace(/[\\/:*?"<>|]/g, '-');
 
-async function saveToExportFolder(files) {
+async function projectExportFolder() {
   const exportDir = await folderHandle.getDirectoryHandle('export', { create: true });
-  const dir = await exportDir.getDirectoryHandle(fileSafe(projectName), { create: true });
+  return exportDir.getDirectoryHandle(fileSafe(projectName), { create: true });
+}
+
+async function saveToExportFolder(files) {
+  const dir = await projectExportFolder();
   const old = [];
   for await (const name of dir.keys()) if (EXPORTED_FILE.test(name)) old.push(name);
   for (const name of old) await dir.removeEntry(name);
   for (const { name, blob } of files) await writeFile(dir, name, blob);
 }
 
-async function exportPages() {
-  if (!folderName) return;
-  const btn = $('export-jpg');
-  btn.disabled = true;
-  busy = true;
+// every page as a full-quality JPG
+async function renderPages(onPage) {
   const { W, H } = pageSize();
   const scale = EXPORT_DPI / 25.4;
   const canvas = document.createElement('canvas');
@@ -1375,34 +1377,108 @@ async function exportPages() {
   const layout = pageLayout();
   const perPage = layout.slots.length;
   const pageCount = Math.ceil(items.length / perPage);
+  const pages = [];
+  for (let p = 0; p < pageCount; p++) {
+    onPage(p + 1, pageCount);
+    await drawPage(ctx, scale, items.slice(p * perPage, (p + 1) * perPage), layout, p + 1);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+    pages.push({ name: `${fileSafe(projectName)}-page-${String(p + 1).padStart(2, '0')}.jpg`, blob, width: canvas.width, height: canvas.height });
+  }
+  return pages;
+}
+
+// one JPG image per PDF page, sized to A4
+async function makePdf(pages) {
+  const { W, H } = pageSize();
+  const points = mm => (mm * 72 / 25.4).toFixed(2);
+  const encoder = new TextEncoder();
+  const parts = [];
+  const offsets = [];
+  let length = 0;
+  const add = part => {
+    const bytes = typeof part === 'string' ? encoder.encode(part) : part;
+    parts.push(bytes);
+    length += bytes.length;
+  };
+  const startObject = id => { offsets[id] = length; add(`${id} 0 obj\n`); };
+
+  add('%PDF-1.4\n');
+  add(new Uint8Array([0x25, 0xE2, 0xE3, 0xCF, 0xD3, 0x0A]));
+  const pageId = i => 3 + i * 3;
+  startObject(1);
+  add('<< /Type /Catalog /Pages 2 0 R >>\nendobj\n');
+  startObject(2);
+  add(`<< /Type /Pages /Kids [${pages.map((_, i) => `${pageId(i)} 0 R`).join(' ')}] /Count ${pages.length} >>\nendobj\n`);
+  for (const [i, page] of pages.entries()) {
+    const id = pageId(i);
+    const drawing = `q ${points(W)} 0 0 ${points(H)} 0 0 cm /Photo Do Q`;
+    const jpg = new Uint8Array(await page.blob.arrayBuffer());
+    startObject(id);
+    add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${points(W)} ${points(H)}] /Resources << /XObject << /Photo ${id + 2} 0 R >> >> /Contents ${id + 1} 0 R >>\nendobj\n`);
+    startObject(id + 1);
+    add(`<< /Length ${drawing.length} >>\nstream\n${drawing}\nendstream\nendobj\n`);
+    startObject(id + 2);
+    add(`<< /Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode /Length ${jpg.length} >>\nstream\n`);
+    add(jpg);
+    add('\nendstream\nendobj\n');
+  }
+  const xref = length;
+  const count = pageId(pages.length);
+  add(`xref\n0 ${count}\n0000000000 65535 f \n`);
+  for (let id = 1; id < count; id++) add(`${String(offsets[id]).padStart(10, '0')} 00000 n \n`);
+  add(`trailer\n<< /Size ${count} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`);
+  return new Blob(parts, { type: 'application/pdf' });
+}
+
+async function runExport(button, idleText, work) {
+  if (!folderName) return;
+  button.disabled = true;
+  busy = true;
   try {
-    const pages = [];
-    for (let p = 0; p < pageCount; p++) {
-      btn.textContent = `Exporting page ${p + 1} of ${pageCount}…`;
-      await drawPage(ctx, scale, items.slice(p * perPage, (p + 1) * perPage), layout, p + 1);
-      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
-      pages.push({ name: `${fileSafe(projectName)}-page-${String(p + 1).padStart(2, '0')}.jpg`, blob });
-    }
-    btn.textContent = 'Creating zip…';
-    const zip = { name: `${fileSafe(projectName)}-pages.zip`, blob: await makeZip(pages) };
-    if (folderHandle) {
-      await saveToExportFolder([...pages, zip]);
-      btn.textContent = `Saved ${pageCount} page${pageCount === 1 ? '' : 's'} + zip to "export/${fileSafe(projectName)}" ✓`;
-    } else {
-      download(zip.blob, zip.name);
-      btn.textContent = `Downloaded ${zip.name} ✓`;
-    }
+    button.textContent = await work(text => { button.textContent = text; });
   } catch (e) {
     alert('Export failed: ' + e.message);
   } finally {
-    btn.disabled = false;
+    button.disabled = false;
     busy = false;
-    setTimeout(() => { btn.textContent = 'Export pages'; }, 6000);
+    setTimeout(() => { button.textContent = idleText; }, 6000);
   }
+}
+
+const exportedTo = () => `"export/${fileSafe(projectName)}"`;
+
+function exportPages() {
+  return runExport($('export-jpg'), 'Export JPG pages + zip', async status => {
+    const pages = await renderPages((p, n) => status(`Exporting page ${p} of ${n}…`));
+    status('Creating zip…');
+    const zip = { name: `${fileSafe(projectName)}-pages.zip`, blob: await makeZip(pages) };
+    if (!folderHandle) {
+      download(zip.blob, zip.name);
+      return `Downloaded ${zip.name} ✓`;
+    }
+    await saveToExportFolder([...pages, zip]);
+    return `Saved ${pages.length} page${pages.length === 1 ? '' : 's'} + zip to ${exportedTo()} ✓`;
+  });
+}
+
+function exportPdf() {
+  return runExport($('export-pdf'), 'Export PDF', async status => {
+    const pages = await renderPages((p, n) => status(`Exporting page ${p} of ${n}…`));
+    status('Creating PDF…');
+    const name = `${fileSafe(projectName)}.pdf`;
+    const pdf = await makePdf(pages);
+    if (!folderHandle) {
+      download(pdf, name);
+      return `Downloaded ${name} ✓`;
+    }
+    await writeFile(await projectExportFolder(), name, pdf);
+    return `Saved ${name} to ${exportedTo()} ✓`;
+  });
 }
 
 $('pick').onclick = $('pick-big').onclick = pickFolder;
 $('export-jpg').onclick = exportPages;
+$('export-pdf').onclick = exportPdf;
 $('print').onclick = () => window.print();
 
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
