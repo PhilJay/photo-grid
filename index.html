@@ -24,8 +24,8 @@
   button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
   button.primary:hover { background: #2f6fda; }
   button:disabled { opacity: .5; cursor: default; }
+  .buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .group { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid #313338; }
-  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   main { flex: 1; overflow: auto; padding: 32px; }
   #empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #9a9ca3; }
   #empty button { font-size: 16px; padding: 12px 20px; }
@@ -48,6 +48,14 @@
   .note:hover { background-color: rgba(59,130,246,.07); }
   .note:focus { box-shadow: 0 0 0 0.5mm #3b82f6; }
   .note:empty::before { content: attr(data-placeholder); color: rgba(128,128,128,.7); }
+  .note.overlay { color: #fff; text-shadow: 0 0.2mm 0.6mm rgba(0,0,0,.4); background: linear-gradient(to top, rgba(0,0,0,.65), rgba(0,0,0,.45) 60%, rgba(0,0,0,0)); }
+  .note.overlay:empty { background: none; }
+  .note.overlay:empty::before { color: rgba(255,255,255,.9); opacity: 0; }
+  .slot:hover .note.overlay:empty { background: linear-gradient(to top, rgba(0,0,0,.45), rgba(0,0,0,0)); }
+  .slot:hover .note.overlay:empty::before, .note.overlay:focus:empty::before { opacity: 1; }
+  .progress { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9a9ca3; }
+  .progress .bar { height: 4px; background: #313338; border-radius: 2px; overflow: hidden; }
+  .progress .bar div { height: 100%; width: 0; background: #3b82f6; transition: width .2s; }
   .hide-btn { position: absolute; top: 2mm; right: 2mm; width: 9mm; height: 9mm; padding: 0; border-radius: 50%; font-size: 6mm; line-height: 1; background: rgba(0,0,0,.6); border: none; color: #fff; display: none; z-index: 1; }
   .slot:hover .hide-btn { display: block; }
   #hidden-tray { margin-top: 40px; padding-top: 16px; border-top: 1px solid #44464d; }
@@ -68,6 +76,7 @@
     .slot.empty { outline: none; }
     .note:empty::before { content: none; }
     .note:hover, .note:focus { background-color: transparent; box-shadow: none; }
+    .note.overlay:empty { background: none !important; }
   }
 </style>
 </head>
@@ -78,13 +87,24 @@
   <button id="reopen" hidden></button>
   <div class="info" id="info">No folder loaded.</div>
   <div class="info" id="save-info" hidden></div>
+  <button id="download-state" hidden></button>
+  <div class="progress" id="progress" hidden><div class="bar"><div></div></div><span></span></div>
+
+  <div class="group" id="project-group" hidden>
+    <label>Project <select id="project"></select></label>
+    <div class="buttons">
+      <button id="project-new" title="Start a new project as a copy of this one">New</button>
+      <button id="project-rename">Rename</button>
+      <button id="project-delete">Delete</button>
+    </div>
+  </div>
   <input type="file" id="file-input" webkitdirectory multiple hidden>
 
   <div class="group">
     <label>Layout <select id="layout"></select></label>
     <label>Style <select id="look"></select></label>
     <label>Photo fit
-      <select id="fit"><option value="contain">Whole photo (no cropping)</option><option value="cover">Fill the space (crops)</option></select>
+      <select id="fit"><option value="cover">Fill the space (crops)</option><option value="contain">Whole photo (no cropping)</option></select>
     </label>
     <label>Orientation
       <select id="orientation"><option value="portrait">A4 portrait</option><option value="landscape">A4 landscape</option></select>
@@ -100,7 +120,10 @@
       <select id="pageNotes"><option value="none">None</option><option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option></select>
     </label>
     <label><span>Notes area size: <span id="pageNoteSize-val"></span></span><input type="range" id="pageNoteSize" min="10" max="150" step="5"></label>
-    <label><span>Note space under each photo: <span id="photoNoteSize-val"></span></span><input type="range" id="photoNoteSize" min="0" max="40" step="1"></label>
+    <label>Note on each photo
+      <select id="photoNotes"><option value="off">None</option><option value="below">Below the photo</option><option value="overlay">On the photo (dark fade)</option></select>
+    </label>
+    <label><span>Space below each photo: <span id="photoNoteSize-val"></span></span><input type="range" id="photoNoteSize" min="5" max="40" step="1"></label>
     <label>Notes background
       <select id="noteLines"><option value="none">Blank</option><option value="lines">Lines</option><option value="dots">Dots</option><option value="grid">Squares</option></select>
     </label>
@@ -111,10 +134,15 @@
     <label>Dragging a photo onto another
       <select id="dragMode"><option value="move">moves it there</option><option value="swap">swaps the two</option></select>
     </label>
-    <div class="buttons">
-      <button id="sort-name">Sort by name</button>
-      <button id="sort-date">Sort by date</button>
-    </div>
+    <label>Sort photos
+      <select id="sort">
+        <option value="">Choose…</option>
+        <option value="name-asc">Name (A-Z)</option>
+        <option value="name-desc">Name (Z-A)</option>
+        <option value="date-asc">Date taken (oldest first)</option>
+        <option value="date-desc">Date taken (newest first)</option>
+      </select>
+    </label>
   </div>
 
   <div class="group">
@@ -124,7 +152,7 @@
   <div class="group">
     <button class="primary" id="export-jpg">Export pages</button>
     <button id="print">Print / Save as PDF</button>
-    <div class="info" id="export-info">Saves one A4 JPG per page at 300 dpi plus a zip of all pages into an <b>export</b> folder inside your photo folder. For PDF choose "Save as PDF" in the print dialog.</div>
+    <div class="info" id="export-info">Saves one A4 JPG per page at 300 dpi plus a zip of all pages into <b>export/&lt;project&gt;</b> inside your photo folder. For PDF choose "Save as PDF" in the print dialog.</div>
   </div>
 </aside>
 
@@ -183,12 +211,14 @@ const SHADOW = { y: 0.6, blur: 2.5, color: 'rgba(0,0,0,0.28)' };
 
 const NOTE_FONT = 3.2;
 const NOTE_LINE = 6.5;
+const OVERLAY_LINE = NOTE_FONT * 1.35;
+const OVERLAY_PAD = { top: 6, side: 2.5, bottom: 2 };
 const RULE_COLOR = 'rgba(128,128,128,0.5)';
 const FONT = 'system-ui, -apple-system, sans-serif';
 
 const DEFAULT_SETTINGS = {
-  layout: 'g2x3', look: 'clean', fit: 'contain', orientation: 'portrait', margin: 10, gap: 4, bg: '#ffffff', captions: false,
-  pageNotes: 'none', pageNoteSize: 40, photoNoteSize: 0, noteLines: 'lines', dragMode: 'move', zoom: 0.5,
+  layout: 'g2x3', look: 'clean', fit: 'cover', orientation: 'portrait', margin: 10, gap: 4, bg: '#ffffff', captions: false,
+  pageNotes: 'none', pageNoteSize: 40, photoNotes: 'off', photoNoteSize: 14, noteLines: 'lines', dragMode: 'move', zoom: 0.5,
 };
 
 let folderName = null;
@@ -196,31 +226,64 @@ let photos = new Map(); // name -> { file, url, w, h }
 let order = [];
 let hidden = new Set();
 let notes = { photo: {}, page: {} };
-let settings = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('photogrid:settings') || '{}') };
+// every project is its own arrangement of the same folder; the open one lives in order, hidden, notes and settings
+let projects = {};
+let projectName = null;
+function withDefaults(saved) {
+  const result = { ...DEFAULT_SETTINGS, ...saved };
+  if (!saved?.photoNotes && saved?.photoNoteSize > 0) result.photoNotes = 'below';
+  if (!result.photoNoteSize) result.photoNoteSize = DEFAULT_SETTINGS.photoNoteSize;
+  return result;
+}
+let settings = withDefaults({});
 let dragFrom = null;
 
 const $ = id => document.getElementById(id);
+const pagesEl = $('pages');
 
 // ---------- saving ----------
 
 const STATE_FILE = 'photo-grid.json';
 let folderHandle = null; // only set when the folder can be written to
 
-function stateKey() { return 'photogrid:folder:' + folderName; }
+// set when the folder cannot be written to and the arrangement changed since the last download
+let unsaved = false;
+
+function projectState() {
+  return { order, hidden: [...hidden], notes, settings };
+}
 
 function currentState() {
-  return { version: 1, order, hidden: [...hidden], notes, settings };
+  return { version: 2, current: projectName, projects: { ...projects, [projectName]: projectState() } };
+}
+
+function readSavedProjects(saved) {
+  if (!saved) return { current: null, projects: {} };
+  if (saved.projects) return saved;
+  return { current: folderName, projects: { [folderName]: saved } };
 }
 
 let writeTimer = null;
 function save() {
-  localStorage.setItem('photogrid:settings', JSON.stringify(settings));
   if (!folderName) return;
-  localStorage.setItem(stateKey(), JSON.stringify(currentState()));
   if (folderHandle) {
     clearTimeout(writeTimer);
     writeTimer = setTimeout(writeStateFile, 500);
+  } else {
+    unsaved = true;
+    updateSaveInfo();
   }
+}
+
+function updateSaveInfo() {
+  $('save-info').hidden = !folderName;
+  $('save-info').textContent = folderHandle
+    ? `Projects are saved in ${STATE_FILE} inside this folder.`
+    : `This browser cannot save into the folder. Download ${STATE_FILE} and put it into the photo folder to keep your projects.`;
+  const btn = $('download-state');
+  btn.hidden = !folderName || !!folderHandle;
+  btn.classList.toggle('primary', unsaved);
+  btn.textContent = unsaved ? `Download ${STATE_FILE} (unsaved changes)` : `Download ${STATE_FILE}`;
 }
 
 async function writeFile(dir, name, data) {
@@ -357,6 +420,8 @@ function loadPreview(photo) {
     let size = await previewLimit(() => browserCanShow(url));
     if (!size && await isRealHeic(photo.file)) {
       URL.revokeObjectURL(url);
+      photo.converting = true;
+      scheduleRender();
       url = URL.createObjectURL(await convertHeic(photo.file, PREVIEW_SIZE));
       size = await previewLimit(() => browserCanShow(url));
       photo.converted = true;
@@ -365,6 +430,7 @@ function loadPreview(photo) {
     Object.assign(photo, { url, w: size.w, h: size.h });
   })().catch(() => { photo.failed = true; }).finally(() => {
     photo.loading = false;
+    photo.converting = false;
     scheduleRender();
   });
 }
@@ -384,6 +450,11 @@ function closeFolder() {
   folderName = null;
   folderHandle = null;
   listSource = null;
+  projects = {};
+  projectName = null;
+  order = [];
+  hidden = new Set();
+  unsaved = false;
 }
 
 // entries: [{ name, key, file }]; key changes when the file content changes
@@ -404,11 +475,14 @@ function applyList(name, entries, savedState) {
   let baseOrder = order, baseHidden = hidden;
   if (newFolder) {
     folderName = name;
-    const saved = savedState || JSON.parse(localStorage.getItem(stateKey()) || 'null');
-    baseOrder = saved ? saved.order : [];
-    baseHidden = new Set(saved ? saved.hidden : []);
-    if (saved) settings = { ...DEFAULT_SETTINGS, ...saved.settings };
-    notes = { photo: {}, page: {}, ...saved?.notes };
+    const saved = readSavedProjects(savedState);
+    projects = saved.projects;
+    projectName = projects[saved.current] ? saved.current : Object.keys(projects)[0] || name;
+    const project = projects[projectName];
+    baseOrder = project?.order || [];
+    baseHidden = new Set(project?.hidden || []);
+    settings = withDefaults(project?.settings);
+    notes = { photo: {}, page: {}, ...project?.notes };
   }
   const known = baseOrder.filter(n => next.has(n));
   const knownSet = new Set(known);
@@ -471,14 +545,26 @@ async function pickFolder() {
   }
 }
 
-$('file-input').addEventListener('change', e => {
+$('file-input').addEventListener('change', async e => {
   const all = [...e.target.files];
   if (!all.length) return;
   const name = all[0].webkitRelativePath.split('/')[0];
-  const files = all.filter(f => IMAGE_FILE.test(f.name) && f.webkitRelativePath.split('/').length === 2);
+  const inFolder = all.filter(f => f.webkitRelativePath.split('/').length === 2);
+  const stateFile = inFolder.find(f => f.name === STATE_FILE);
+  let savedState = null;
+  try { savedState = stateFile && JSON.parse(await stateFile.text()); } catch {}
   closeFolder();
-  applyList(name, files.map(fileEntry));
+  applyList(name, inFolder.filter(f => IMAGE_FILE.test(f.name)).map(fileEntry), savedState);
+  unsaved = false;
+  updateSaveInfo();
+  e.target.value = '';
 });
+
+$('download-state').onclick = () => {
+  download(new Blob([JSON.stringify(currentState(), null, 2)], { type: 'application/json' }), STATE_FILE);
+  unsaved = false;
+  updateSaveInfo();
+};
 
 async function offerReopen() {
   const handle = await dbGet('folder');
@@ -528,7 +614,7 @@ function slotGeometry(slot, photo) {
   const bottom = look.bottom ? short * look.bottom : p;
   const captionH = settings.captions && !look.bottom ? font * 2 : 0;
   const free = slot.h - p - bottom - captionH;
-  const noteH = settings.photoNoteSize ? Math.min(settings.photoNoteSize, free * 0.6) : 0;
+  const noteH = settings.photoNotes === 'below' ? Math.min(settings.photoNoteSize, free * 0.6) : 0;
   let box = { x: 0, y: 0, w: slot.w - 2 * p, h: free - noteH };
   if (settings.fit === 'contain' && photo?.w) box = fitRect(box, photo.w, photo.h, 'contain');
   const frameW = box.w + 2 * p, frameH = box.h + p + bottom + captionH + noteH;
@@ -541,7 +627,8 @@ function slotGeometry(slot, photo) {
       : { x: box.x, y: box.y + box.h, w: box.w, h: captionH };
   }
   const note = noteH ? { x: box.x, y: box.y + box.h + captionH, w: box.w, h: noteH } : null;
-  return { look, frame, box, caption, note, font, radius: look.radius ? Math.min(4, short * look.radius) : 0 };
+  const overlay = settings.photoNotes === 'overlay' ? { x: box.x, w: box.w, bottom: slot.h - box.y - box.h, maxH: box.h * 0.6 } : null;
+  return { look, frame, box, caption, note, overlay, font, radius: look.radius ? Math.min(4, short * look.radius) : 0 };
 }
 
 function fitRect(box, iw, ih, mode) {
@@ -567,16 +654,18 @@ const mm = v => v.toFixed(2) + 'mm';
 const place = r => `left:${mm(r.x)};top:${mm(r.y)};width:${mm(r.w)};height:${mm(r.h)};`;
 const shadowCss = `box-shadow:0 ${SHADOW.y}mm ${SHADOW.blur}mm ${SHADOW.color};`;
 
-function slotHtml(slot, index, name) {
-  if (!name) return `<div class="slot empty" style="${place(slot)}"></div>`;
+// the slot's position is set separately, so moving a photo keeps its element
+function slotHtml(slot, name, withText) {
   const photo = photos.get(name);
   const g = slotGeometry(slot, photo);
-  let html = `<div class="slot" data-i="${index}" data-name="${escapeHtml(name)}" style="${place(slot)}" title="${escapeHtml(name)}">`;
+  const note = withText ? notes.photo[name] : '';
+  let html = `<div class="slot" data-name="${escapeHtml(name)}" title="${escapeHtml(name)}">`;
   if (g.look.frame) {
     html += `<div class="frame" style="${place(g.frame)}background:${g.look.frame};${g.look.shadow ? shadowCss : ''}${g.look.border ? 'outline:0.25mm solid #ccc;outline-offset:-0.25mm;' : ''}"></div>`;
   }
   if (!photo.url) {
-    html += `<div class="imgbox placeholder" draggable="true" style="${place(g.box)}">${photo.failed ? 'Cannot open this file' : 'Loading…'}`;
+    const text = photo.failed ? 'Cannot open this file' : photo.converting ? 'Converting HEIC…' : 'Loading…';
+    html += `<div class="imgbox placeholder" draggable="true" style="${place(g.box)}">${text}`;
   } else {
     html += `<div class="imgbox" draggable="true" style="${place(g.box)}border-radius:${mm(g.radius)};${g.look.shadow && !g.look.frame ? shadowCss : ''}">`;
     html += `<img src="${photo.url}" data-name="${escapeHtml(name)}" draggable="false" decoding="async" loading="lazy">`;
@@ -585,8 +674,17 @@ function slotHtml(slot, index, name) {
   if (g.caption) {
     html += `<div class="caption" style="${place(g.caption)}font-size:${mm(g.font)};line-height:${mm(g.caption.h)};color:${textColor(!!g.look.frame)}">${escapeHtml(captionText(name))}</div>`;
   }
-  if (g.note) html += noteHtml(g.note, notes.photo[name], 'photo', name, 'Note…', !!g.look.frame);
+  if (g.note) html += noteHtml(g.note, note, 'photo', name, 'Note…', !!g.look.frame);
+  if (g.overlay) html += overlayNoteHtml(g, note, name);
   return html + '</div>';
+}
+
+function overlayNoteHtml(g, text, name) {
+  const o = g.overlay;
+  return `<div class="note overlay" contenteditable="plaintext-only" data-note-photo="${escapeHtml(name)}" data-placeholder="Note…" `
+    + `style="left:${mm(o.x)};width:${mm(o.w)};bottom:${mm(o.bottom)};max-height:${mm(o.maxH)};`
+    + `padding:${mm(OVERLAY_PAD.top)} ${mm(OVERLAY_PAD.side)} ${mm(OVERLAY_PAD.bottom)};border-radius:0 0 ${mm(g.radius)} ${mm(g.radius)};`
+    + `font-size:${mm(NOTE_FONT)};line-height:${mm(OVERLAY_LINE)}">${escapeHtml(text || '')}</div>`;
 }
 
 // lines stay at least one screen pixel thick when zoomed out
@@ -614,6 +712,38 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 }
 
+// elements are kept per photo and only rebuilt when their content changes, so images do not reload
+const slotNodes = new Map();
+const otherNodes = new Map();
+let sheets = [];
+
+function reuse(cache, id, key, html) {
+  let entry = cache.get(id);
+  if (!entry || entry.key !== key) {
+    const template = document.createElement('template');
+    template.innerHTML = html;
+    entry = { el: template.content.firstElementChild, key };
+    cache.set(id, entry);
+  }
+  entry.used = true;
+  return entry.el;
+}
+
+function setChildren(parent, children) {
+  const same = parent.children.length === children.length && children.every((c, k) => parent.children[k] === c);
+  if (!same) parent.replaceChildren(...children);
+}
+
+function updateProgress() {
+  const all = [...photos.values()];
+  const done = all.filter(p => p.url || p.failed).length;
+  const converting = all.filter(p => p.converting).length;
+  const el = $('progress');
+  el.hidden = !all.length || done === all.length;
+  el.querySelector('.bar div').style.width = `${all.length ? done / all.length * 100 : 0}%`;
+  el.querySelector('span').textContent = `Loading photos ${done} of ${all.length}…${converting ? ` (converting ${converting} HEIC)` : ''}`;
+}
+
 function render() {
   document.documentElement.style.setProperty('--zoom', settings.zoom);
   $('page-size').textContent = `@page { size: A4 ${settings.orientation}; margin: 0; }`;
@@ -621,33 +751,54 @@ function render() {
   const items = visible();
   const { slots, note } = pageLayout();
   const pageCount = folderName ? Math.max(1, Math.ceil(items.length / slots.length)) : 0;
+  const failed = [...photos.values()].filter(p => p.failed).length;
   $('info').textContent = folderName
-    ? `"${folderName}" - ${items.length} photos${hidden.size ? `, ${hidden.size} hidden` : ''} on ${pageCount} page${pageCount === 1 ? '' : 's'}`
+    ? `"${folderName}" - ${items.length} photos${hidden.size ? `, ${hidden.size} hidden` : ''} on ${pageCount} page${pageCount === 1 ? '' : 's'}${failed ? ` - ${failed} could not be opened` : ''}`
     : 'No folder loaded.';
-  $('save-info').hidden = !folderName;
-  $('save-info').textContent = folderHandle
-    ? `Order and notes are saved in ${STATE_FILE} inside this folder.`
-    : 'Order and notes are saved in this browser only. Use Chrome or Edge to save them in the folder.';
+  updateSaveInfo();
+  updateProgress();
 
-  let html = '';
+  for (const cache of [slotNodes, otherNodes]) for (const entry of cache.values()) entry.used = false;
   for (let p = 0; p < pageCount; p++) {
-    html += `<div class="sheet"><div class="label">Page ${p + 1} of ${pageCount}</div>`;
-    html += `<div class="page ${settings.orientation}" style="background:${settings.bg}">`;
-    slots.forEach((slot, s) => {
+    if (!sheets[p]) {
+      sheets[p] = document.createElement('div');
+      sheets[p].className = 'sheet';
+      sheets[p].innerHTML = '<div class="label"></div><div class="page"></div>';
+    }
+    sheets[p].querySelector('.label').textContent = `Page ${p + 1} of ${pageCount}`;
+    const page = sheets[p].querySelector('.page');
+    page.className = `page ${settings.orientation}`;
+    page.style.background = settings.bg;
+    const children = slots.map((slot, s) => {
       const i = p * slots.length + s;
-      html += slotHtml(slot, i, items[i]);
+      const name = items[i];
+      if (!name) return reuse(otherNodes, `empty:${p}:${s}`, place(slot), `<div class="slot empty" style="${place(slot)}"></div>`);
+      const el = reuse(slotNodes, name, slotHtml(slot, name, false), slotHtml(slot, name, true));
+      el.dataset.i = i;
+      el.style.cssText = place(slot);
+      return el;
     });
-    if (note) html += noteHtml(note, notes.page[p + 1], 'page', p + 1, 'Notes for this page…', false);
-    html += '</div></div>';
+    if (note) {
+      const id = p + 1;
+      children.push(reuse(otherNodes, `page-note:${id}`, noteHtml(note, '', 'page', id, 'Notes for this page…', false), noteHtml(note, notes.page[id], 'page', id, 'Notes for this page…', false)));
+    }
+    setChildren(page, children);
   }
-  $('pages').innerHTML = html;
+  sheets.splice(pageCount);
+  setChildren(pagesEl, sheets);
+  for (const cache of [slotNodes, otherNodes]) for (const [id, entry] of cache) if (!entry.used) cache.delete(id);
 
   for (const name of order) loadPreview(photos.get(name));
 
   const tray = $('hidden-tray');
   tray.hidden = !hidden.size;
-  tray.querySelector('.thumbs').innerHTML = [...hidden]
+  const trayHtml = [...hidden]
     .map(n => `<img src="${photos.get(n).url || ''}" data-unhide="${escapeHtml(n)}" title="${escapeHtml(n)}">`).join('');
+  const thumbs = tray.querySelector('.thumbs');
+  if (thumbs.dataset.html !== trayHtml) {
+    thumbs.innerHTML = trayHtml;
+    thumbs.dataset.html = trayHtml;
+  }
 }
 
 let renderQueued = false;
@@ -704,7 +855,6 @@ function movePhoto(fromIndex, toIndex) {
   animateChange(render);
 }
 
-const pagesEl = $('pages');
 pagesEl.addEventListener('dragstart', e => {
   const slot = e.target.closest('.slot[data-i]');
   if (!slot) return;
@@ -761,31 +911,118 @@ $('hidden-tray').addEventListener('click', e => {
   animateChange(render);
 });
 
-async function sortPhotos(sortKey, label) {
-  if (!folderName || !confirm(`Replace your custom order with ${label}?`)) return;
-  const keys = new Map(await Promise.all(order.map(async n => [n, await sortKey(n)])));
-  order.sort((a, b) => keys.get(a) < keys.get(b) ? -1 : keys.get(a) > keys.get(b) ? 1 : byName(a, b));
+const DATE_IN_FILE = /(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/g;
+
+// photos store dates in their metadata near the start of the file, the earliest one is when the photo was taken
+async function dateTaken(file) {
+  const text = new TextDecoder('latin1').decode(await file.slice(0, 262144).arrayBuffer());
+  let earliest = Infinity;
+  for (const m of text.matchAll(DATE_IN_FILE)) {
+    const time = new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+    if (+m[1] > 1900 && time < earliest) earliest = time;
+  }
+  return earliest === Infinity ? file.lastModified : earliest;
+}
+
+const SORTS = {
+  name: { label: 'name', key: () => 0 },
+  date: { label: 'date taken', key: name => dateTaken(photos.get(name).file) },
+};
+
+$('sort').addEventListener('change', async e => {
+  const [by, direction] = e.target.value.split('-');
+  e.target.value = '';
+  if (!folderName || !SORTS[by] || !confirm(`Replace your custom order by sorting by ${SORTS[by].label}?`)) return;
+  const keys = new Map(await Promise.all(order.map(async n => [n, await SORTS[by].key(n)])));
+  const sign = direction === 'desc' ? -1 : 1;
+  order.sort((a, b) => sign * (keys.get(a) - keys.get(b) || byName(a, b)));
   save();
   animateChange(render);
+});
+
+// ---------- projects ----------
+
+function openProject(name) {
+  const project = projects[name];
+  projectName = name;
+  const known = project.order.filter(n => photos.has(n));
+  const knownSet = new Set(known);
+  order = [...known, ...[...photos.keys()].filter(n => !knownSet.has(n)).sort(byName)];
+  hidden = new Set(project.hidden.filter(n => photos.has(n)));
+  notes = { photo: {}, page: {}, ...project.notes };
+  settings = withDefaults(project.settings);
+  save();
+  syncControls();
+  render();
 }
-$('sort-name').onclick = () => sortPhotos(n => 0, 'sorting by file name');
-$('sort-date').onclick = () => sortPhotos(n => photos.get(n).file.lastModified, 'sorting by file date');
+
+function askProjectName(question, suggestion) {
+  const name = prompt(question, suggestion)?.trim();
+  if (!name) return null;
+  if (name !== projectName && projects[name]) {
+    alert(`There is already a project called "${name}".`);
+    return null;
+  }
+  return name;
+}
+
+$('project').addEventListener('change', e => {
+  projects[projectName] = projectState();
+  openProject(e.target.value);
+});
+
+$('project-new').onclick = () => {
+  const name = askProjectName('Name of the new project (it starts as a copy of this one):', `${projectName} copy`);
+  if (!name) return;
+  projects[projectName] = projectState();
+  projects[name] = structuredClone(projectState());
+  openProject(name);
+};
+
+$('project-rename').onclick = () => {
+  const name = askProjectName('New name for this project:', projectName);
+  if (!name || name === projectName) return;
+  delete projects[projectName];
+  projectName = name;
+  save();
+  syncControls();
+  render();
+};
+
+$('project-delete').onclick = () => {
+  const others = Object.keys(projects).filter(n => n !== projectName);
+  if (!others.length) return alert('This is the only project. Create another one before deleting it.');
+  if (!confirm(`Delete the project "${projectName}"? Its order, notes and settings will be lost. The photos are not touched.`)) return;
+  delete projects[projectName];
+  openProject(others[0]);
+};
+
+function syncProjects() {
+  $('project-group').hidden = !folderName;
+  const names = [...new Set([...Object.keys(projects), projectName].filter(Boolean))];
+  const select = $('project');
+  select.replaceChildren(...names.map(n => new Option(n, n)));
+  select.value = projectName;
+  $('project-delete').disabled = names.length < 2;
+}
 
 // ---------- settings ----------
 
 for (const [key, l] of Object.entries(LAYOUTS)) $('layout').add(new Option(l.name, key));
 for (const [key, l] of Object.entries(LOOKS)) $('look').add(new Option(l.name, key));
 
-const CONTROLS = ['layout', 'look', 'fit', 'orientation', 'margin', 'gap', 'bg', 'captions', 'pageNotes', 'pageNoteSize', 'photoNoteSize', 'noteLines', 'dragMode', 'zoom'];
+const CONTROLS = ['layout', 'look', 'fit', 'orientation', 'margin', 'gap', 'bg', 'captions', 'pageNotes', 'pageNoteSize', 'photoNotes', 'photoNoteSize', 'noteLines', 'dragMode', 'zoom'];
 
 function syncControls() {
   for (const key of CONTROLS) {
     const el = $(key);
     if (el.type === 'checkbox') el.checked = settings[key];
     else el.value = settings[key];
-    if ($(key + '-val')) $(key + '-val').textContent = key === 'photoNoteSize' && !settings[key] ? 'off' : `${settings[key]} mm`;
+    if ($(key + '-val')) $(key + '-val').textContent = `${settings[key]} mm`;
   }
   $('pageNoteSize').disabled = settings.pageNotes === 'none';
+  $('photoNoteSize').disabled = settings.photoNotes !== 'below';
+  syncProjects();
 }
 
 for (const key of CONTROLS) {
@@ -849,6 +1086,35 @@ function drawNote(ctx, r, text, scale, onFrame) {
       ctx.fillText(line, r.x, r.y + (k + 1) * lineH - (lineH - font) / 2 - 0.2 * font);
     });
   }
+  ctx.restore();
+}
+
+function drawOverlayNote(ctx, box, text, scale, radius) {
+  if (!text) return;
+  const font = NOTE_FONT * scale, lineH = OVERLAY_LINE * scale;
+  const top = OVERLAY_PAD.top * scale, side = OVERLAY_PAD.side * scale, bottom = OVERLAY_PAD.bottom * scale;
+  ctx.save();
+  ctx.font = `${font}px ${FONT}`;
+  const maxLines = Math.max(1, Math.floor((box.h * 0.6 - top - bottom) / lineH));
+  const lines = wrapLines(ctx, text, box.w - 2 * side).slice(0, maxLines);
+  const h = top + lines.length * lineH + bottom;
+  const y = box.y + box.h - h;
+  ctx.beginPath();
+  ctx.roundRect(box.x, box.y, box.w, box.h, radius);
+  ctx.clip();
+  const fade = ctx.createLinearGradient(0, box.y + box.h, 0, y);
+  fade.addColorStop(0, 'rgba(0,0,0,0.65)');
+  fade.addColorStop(0.6, 'rgba(0,0,0,0.45)');
+  fade.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = fade;
+  ctx.fillRect(box.x, y, box.w, h);
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = 0.6 * scale;
+  ctx.shadowOffsetY = 0.2 * scale;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  lines.forEach((line, k) => ctx.fillText(line, box.x + side, y + top + (k + 1) * lineH - (lineH - font) / 2 - 0.2 * font));
   ctx.restore();
 }
 
@@ -917,6 +1183,7 @@ function drawPage(ctx, scale, names, layout, pageNumber) {
       ctx.fillText(text, c.x + c.w / 2, c.y + c.h / 2);
     }
     if (g.note) drawNote(ctx, px(g.note), notes.photo[name], scale, !!g.look.frame);
+    if (g.overlay) drawOverlayNote(ctx, r, notes.photo[name], scale, radius);
   }), Promise.resolve());
 }
 
@@ -994,8 +1261,11 @@ function download(blob, fileName) {
 
 const EXPORTED_FILE = /-page-\d+\.jpg$|-pages\.zip$/;
 
+const fileSafe = name => name.replace(/[\\/:*?"<>|]/g, '-');
+
 async function saveToExportFolder(files) {
-  const dir = await folderHandle.getDirectoryHandle('export', { create: true });
+  const exportDir = await folderHandle.getDirectoryHandle('export', { create: true });
+  const dir = await exportDir.getDirectoryHandle(fileSafe(projectName), { create: true });
   const old = [];
   for await (const name of dir.keys()) if (EXPORTED_FILE.test(name)) old.push(name);
   for (const name of old) await dir.removeEntry(name);
@@ -1023,13 +1293,13 @@ async function exportPages() {
       btn.textContent = `Exporting page ${p + 1} of ${pageCount}…`;
       await drawPage(ctx, scale, items.slice(p * perPage, (p + 1) * perPage), layout, p + 1);
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
-      pages.push({ name: `${folderName}-page-${String(p + 1).padStart(2, '0')}.jpg`, blob });
+      pages.push({ name: `${fileSafe(projectName)}-page-${String(p + 1).padStart(2, '0')}.jpg`, blob });
     }
     btn.textContent = 'Creating zip…';
-    const zip = { name: `${folderName}-pages.zip`, blob: await makeZip(pages) };
+    const zip = { name: `${fileSafe(projectName)}-pages.zip`, blob: await makeZip(pages) };
     if (folderHandle) {
       await saveToExportFolder([...pages, zip]);
-      btn.textContent = `Saved ${pageCount} pages + zip to "${folderName}/export" ✓`;
+      btn.textContent = `Saved ${pageCount} page${pageCount === 1 ? '' : 's'} + zip to "export/${fileSafe(projectName)}" ✓`;
     } else {
       download(zip.blob, zip.name);
       btn.textContent = `Downloaded ${zip.name} ✓`;
@@ -1050,6 +1320,8 @@ $('print').onclick = () => window.print();
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   navigator.serviceWorker.register('sw.js').catch(() => {});
 }
+
+for (const key of Object.keys(localStorage)) if (key.startsWith('photogrid:')) localStorage.removeItem(key);
 
 syncControls();
 render();
