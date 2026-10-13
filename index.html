@@ -27,8 +27,16 @@
   .buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .group { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid #313338; }
   main { flex: 1; overflow: auto; padding: 32px; }
-  #empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #9a9ca3; }
-  #empty button { font-size: 16px; padding: 12px 20px; }
+  #empty { max-width: 640px; margin: 40px auto; display: flex; flex-direction: column; gap: 16px; color: #9a9ca3; }
+  #empty h2 { color: #e8e8ea; font-size: 20px; margin: 0; }
+  #empty .start { display: flex; align-items: center; gap: 16px; }
+  #empty .start button { font-size: 16px; padding: 12px 20px; flex: none; }
+  .folder-card { background: #1e1f22; border: 1px solid #313338; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .folder-head { display: flex; align-items: center; gap: 10px; }
+  .folder-head b { flex: 1; color: #e8e8ea; font-size: 15px; }
+  .folder-head span { font-size: 12px; }
+  .folder-projects { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+  .forget { background: none; border: none; color: #9a9ca3; font-size: 18px; padding: 0 4px; }
   #pages { display: flex; flex-wrap: wrap; gap: 36px; justify-content: center; align-items: flex-start; }
   .sheet { display: flex; flex-direction: column; gap: 6px; }
   .sheet .label { font-size: 12px; color: #9a9ca3; }
@@ -84,7 +92,7 @@
 <aside>
   <h1>Photo Grid</h1>
   <button id="pick">Choose photo folder…</button>
-  <button id="reopen" hidden></button>
+  <button id="home" hidden>All folders and projects</button>
   <div class="info" id="info">No folder loaded.</div>
   <div class="info" id="save-info" hidden></div>
   <button id="download-state" hidden></button>
@@ -158,8 +166,12 @@
 
 <main>
   <div id="empty">
-    <button class="primary" id="pick-big">Choose photo folder…</button>
-    <div>Your photos stay on this computer. Nothing is uploaded.<br>Pick a folder, then drag photos to rearrange them.</div>
+    <h2>Your photo folders</h2>
+    <div id="recent"></div>
+    <div class="start">
+      <button class="primary" id="pick-big">Choose photo folder…</button>
+      <div>Your photos stay on this computer. Nothing is uploaded.<br>Pick a folder, then drag photos to rearrange them.</div>
+    </div>
   </div>
   <div id="pages"></div>
   <div id="hidden-tray" hidden>
@@ -257,10 +269,10 @@ function currentState() {
   return { version: 2, current: projectName, projects: { ...projects, [projectName]: projectState() } };
 }
 
-function readSavedProjects(saved) {
+function readSavedProjects(saved, name = folderName) {
   if (!saved) return { current: null, projects: {} };
   if (saved.projects) return saved;
-  return { current: folderName, projects: { [folderName]: saved } };
+  return { current: name, projects: { [name]: saved } };
 }
 
 let writeTimer = null;
@@ -385,12 +397,22 @@ function startConvertJobs() {
   }
 }
 
-function browserCanShow(url) {
+// the grid shows a small copy, many full-size photos at once make Safari drop and redraw them
+function makePreview(sourceUrl) {
   return new Promise(resolve => {
     const img = new Image();
-    img.onload = () => resolve(img.naturalWidth ? { w: img.naturalWidth, h: img.naturalHeight } : null);
     img.onerror = () => resolve(null);
-    img.src = url;
+    img.onload = () => img.decode().catch(() => {}).then(() => {
+      const w = img.naturalWidth, h = img.naturalHeight;
+      if (!w) return resolve(null);
+      const scale = Math.min(1, PREVIEW_SIZE / Math.max(w, h));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(w * scale);
+      canvas.height = Math.round(h * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(blob => resolve(blob ? { url: URL.createObjectURL(blob), w, h } : null), 'image/jpeg', 0.85);
+    });
+    img.src = sourceUrl;
   });
 }
 
@@ -416,18 +438,19 @@ function loadPreview(photo) {
   photo.loading = true;
   (async () => {
     photo.blob = await withRealType(photo.file);
-    let url = URL.createObjectURL(photo.blob);
-    let size = await previewLimit(() => browserCanShow(url));
-    if (!size && await isRealHeic(photo.file)) {
-      URL.revokeObjectURL(url);
+    const source = URL.createObjectURL(photo.blob);
+    let preview = await previewLimit(() => makePreview(source));
+    URL.revokeObjectURL(source);
+    if (!preview && await isRealHeic(photo.file)) {
       photo.converting = true;
       scheduleRender();
-      url = URL.createObjectURL(await convertHeic(photo.file, PREVIEW_SIZE));
-      size = await previewLimit(() => browserCanShow(url));
+      const converted = URL.createObjectURL(await convertHeic(photo.file, PREVIEW_SIZE));
+      preview = await previewLimit(() => makePreview(converted));
+      URL.revokeObjectURL(converted);
       photo.converted = true;
     }
-    if (!size) throw new Error('Unsupported image');
-    Object.assign(photo, { url, w: size.w, h: size.h });
+    if (!preview) throw new Error('Unsupported image');
+    Object.assign(photo, preview);
   })().catch(() => { photo.failed = true; }).finally(() => {
     photo.loading = false;
     photo.converting = false;
@@ -523,27 +546,88 @@ function listHandle(handle) {
   };
 }
 
-async function openFolder(handle) {
+async function openFolder(handle, project) {
   const list = listHandle(handle);
   const entries = await list();
   const savedState = await readStateFile(handle);
   closeFolder();
   folderHandle = await handle.queryPermission({ mode: 'readwrite' }) === 'granted' ? handle : null;
   listSource = list;
-  $('reopen').hidden = true;
   applyList(handle.name, entries, savedState);
+  if (project && projects[project] && project !== projectName) {
+    projects[projectName] = projectState();
+    openProject(project);
+  }
+  rememberFolder(handle);
 }
 
 async function pickFolder() {
   if (!window.showDirectoryPicker) return $('file-input').click();
   try {
-    const handle = await showDirectoryPicker({ id: 'photogrid', mode: 'readwrite' });
-    await dbSet('folder', handle);
-    await openFolder(handle);
+    await openFolder(await showDirectoryPicker({ id: 'photogrid', mode: 'readwrite' }));
   } catch (e) {
     if (e.name !== 'AbortError') alert(e.message);
   }
 }
+
+// ---------- folder overview ----------
+
+// the browser keeps only the list of opened folders, their projects are read from each folder's file
+async function recentFolders() {
+  return (await dbGet('folders')) || [];
+}
+
+async function rememberFolder(handle) {
+  const others = [];
+  for (const folder of await recentFolders()) if (!(await folder.handle.isSameEntry(handle))) others.push(folder);
+  await dbSet('folders', [{ handle, opened: Date.now() }, ...others].slice(0, 30));
+}
+
+async function showRecentFolders() {
+  const folders = await recentFolders();
+  const cards = await Promise.all(folders.map(async ({ handle, opened }, i) => {
+    const allowed = await handle.queryPermission({ mode: 'readwrite' }) === 'granted';
+    const saved = allowed ? await readStateFile(handle) : null;
+    const names = saved ? Object.keys(readSavedProjects(saved, handle.name).projects) : [];
+    const projectButtons = names.map(n => `<button data-open="${i}" data-project="${escapeHtml(n)}">${escapeHtml(n)}</button>`).join('');
+    const body = !allowed
+      ? `<button data-open="${i}">Open folder</button> Allow access again to see its projects.`
+      : names.length ? `Projects: ${projectButtons}` : `<button data-open="${i}">Open folder</button> No projects yet.`;
+    return `<div class="folder-card"><div class="folder-head"><b>${escapeHtml(handle.name)}</b>`
+      + `<span>opened ${new Date(opened).toLocaleDateString()}</span>`
+      + `<button class="forget" data-forget="${i}" title="Remove from this list (the folder is not touched)">×</button></div>`
+      + `<div class="folder-projects">${body}</div></div>`;
+  }));
+  $('recent').innerHTML = cards.length
+    ? cards.join('')
+    : window.showDirectoryPicker ? 'No folders yet.' : 'This browser cannot remember folders. Use Chrome or Edge to see your folders here.';
+}
+
+$('recent').addEventListener('click', async e => {
+  const folders = await recentFolders();
+  const forget = e.target.dataset.forget;
+  if (forget !== undefined) {
+    folders.splice(+forget, 1);
+    await dbSet('folders', folders);
+    return showRecentFolders();
+  }
+  const open = e.target.dataset.open;
+  if (open === undefined) return;
+  const { handle } = folders[+open];
+  if (await handle.requestPermission({ mode: 'readwrite' }) !== 'granted') return;
+  try {
+    await openFolder(handle, e.target.dataset.project);
+  } catch (err) {
+    alert(`Could not open "${handle.name}". It may have been moved or deleted.`);
+  }
+});
+
+$('home').onclick = () => {
+  closeFolder();
+  syncControls();
+  render();
+  showRecentFolders();
+};
 
 $('file-input').addEventListener('change', async e => {
   const all = [...e.target.files];
@@ -565,18 +649,6 @@ $('download-state').onclick = () => {
   unsaved = false;
   updateSaveInfo();
 };
-
-async function offerReopen() {
-  const handle = await dbGet('folder');
-  if (!handle?.queryPermission) return;
-  if (await handle.queryPermission({ mode: 'readwrite' }) === 'granted') return openFolder(handle);
-  const btn = $('reopen');
-  btn.textContent = `Open "${handle.name}" again`;
-  btn.hidden = false;
-  btn.onclick = async () => {
-    if (await handle.requestPermission({ mode: 'readwrite' }) === 'granted') openFolder(handle);
-  };
-}
 
 // ---------- geometry ----------
 
@@ -729,9 +801,20 @@ function reuse(cache, id, key, html) {
   return entry.el;
 }
 
+// moves only the elements that changed place, a moved image can flash
 function setChildren(parent, children) {
-  const same = parent.children.length === children.length && children.every((c, k) => parent.children[k] === c);
-  if (!same) parent.replaceChildren(...children);
+  const keep = new Set(children);
+  for (const child of [...parent.children]) if (!keep.has(child)) child.remove();
+  children.forEach((child, k) => {
+    if (parent.children[k] !== child) parent.insertBefore(child, parent.children[k] || null);
+  });
+}
+
+function setStyle(el, css) {
+  if (el.dataset.css !== css) {
+    el.style.cssText = css;
+    el.dataset.css = css;
+  }
 }
 
 function updateProgress() {
@@ -745,9 +828,13 @@ function updateProgress() {
 }
 
 function render() {
-  document.documentElement.style.setProperty('--zoom', settings.zoom);
-  $('page-size').textContent = `@page { size: A4 ${settings.orientation}; margin: 0; }`;
+  if (document.documentElement.style.getPropertyValue('--zoom') !== String(settings.zoom)) {
+    document.documentElement.style.setProperty('--zoom', settings.zoom);
+  }
+  const pageRule = `@page { size: A4 ${settings.orientation}; margin: 0; }`;
+  if ($('page-size').textContent !== pageRule) $('page-size').textContent = pageRule;
   $('empty').hidden = !!folderName;
+  $('home').hidden = !folderName;
   const items = visible();
   const { slots, note } = pageLayout();
   const pageCount = folderName ? Math.max(1, Math.ceil(items.length / slots.length)) : 0;
@@ -767,15 +854,15 @@ function render() {
     }
     sheets[p].querySelector('.label').textContent = `Page ${p + 1} of ${pageCount}`;
     const page = sheets[p].querySelector('.page');
-    page.className = `page ${settings.orientation}`;
-    page.style.background = settings.bg;
+    if (page.className !== `page ${settings.orientation}`) page.className = `page ${settings.orientation}`;
+    setStyle(page, `background:${settings.bg}`);
     const children = slots.map((slot, s) => {
       const i = p * slots.length + s;
       const name = items[i];
       if (!name) return reuse(otherNodes, `empty:${p}:${s}`, place(slot), `<div class="slot empty" style="${place(slot)}"></div>`);
       const el = reuse(slotNodes, name, slotHtml(slot, name, false), slotHtml(slot, name, true));
       el.dataset.i = i;
-      el.style.cssText = place(slot);
+      setStyle(el, place(slot));
       return el;
     });
     if (note) {
@@ -833,6 +920,7 @@ function animateChange(change) {
     const dx = (a.left - b.left) / zoom, dy = (a.top - b.top) / zoom;
     if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
     el.style.zIndex = 5;
+    delete el.dataset.css;
     el.animate([
       { transformOrigin: '0 0', transform: `translate(${dx}px, ${dy}px) scale(${a.width / b.width}, ${a.height / b.height})` },
       { transformOrigin: '0 0', transform: 'none' },
@@ -1325,7 +1413,7 @@ for (const key of Object.keys(localStorage)) if (key.startsWith('photogrid:')) l
 
 syncControls();
 render();
-offerReopen();
+showRecentFolders();
 </script>
 </body>
 </html>
