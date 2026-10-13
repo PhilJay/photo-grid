@@ -25,13 +25,33 @@
   button.primary:hover { background: #2f6fda; }
   button:disabled { opacity: .5; cursor: default; }
   .buttons { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-  #empty .start-buttons { display: flex; flex-direction: column; gap: 8px; flex: none; }
   .group { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid #313338; }
   main { flex: 1; overflow: auto; padding: 32px; }
-  #empty { max-width: 640px; margin: 40px auto; display: flex; flex-direction: column; gap: 16px; color: #9a9ca3; }
-  #empty h2 { color: #e8e8ea; font-size: 20px; margin: 0; }
-  #empty .start { display: flex; align-items: center; gap: 16px; }
-  #empty .start button { font-size: 16px; padding: 12px 20px; flex: none; }
+  body.landing aside { display: none; }
+  body.landing main { padding: 48px 40px; }
+  #empty { max-width: 1080px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; color: #9a9ca3; }
+  .hero { display: grid; grid-template-columns: 1.1fr 1fr; gap: 40px; align-items: center; }
+  .brand { display: flex; align-items: center; gap: 12px; color: #e8e8ea; font-size: 22px; font-weight: 700; }
+  .brand img { width: 40px; height: 40px; }
+  .hero h2 { color: #e8e8ea; font-size: 40px; line-height: 1.15; letter-spacing: -0.5px; margin: 18px 0 14px; }
+  .hero p { font-size: 17px; line-height: 1.55; margin: 0 0 26px; color: #b5b7bd; }
+  .hero-image { width: 100%; max-width: 460px; justify-self: center; -webkit-mask-image: radial-gradient(closest-side, #000 80%, transparent 100%); mask-image: radial-gradient(closest-side, #000 80%, transparent 100%); }
+  .start-buttons { display: flex; gap: 10px; flex-wrap: wrap; }
+  .start-buttons button { font-size: 16px; padding: 12px 22px; border-radius: 8px; }
+  .drop-hint { font-size: 13px; margin-top: 12px; }
+  .features { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin: 18px 0 8px; padding: 0; list-style: none; }
+  .features li { background: #1e1f22; border: 1px solid #313338; border-radius: 10px; padding: 14px 16px; font-size: 13px; line-height: 1.45; }
+  .features b { display: block; color: #e8e8ea; font-size: 14px; margin-bottom: 4px; }
+  #empty h3 { color: #e8e8ea; font-size: 16px; margin: 14px 0 0; }
+  @media (max-width: 820px) { .hero, .features { grid-template-columns: 1fr; } .hero-image { display: none; } }
+  aside h2 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: #7d8088; margin: 0 0 -2px; font-weight: 600; }
+  .undo-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #toasts { position: fixed; right: 20px; bottom: 20px; display: flex; flex-direction: column; gap: 8px; z-index: 50; }
+  .toast { background: #1e1f22; border: 1px solid #44464d; border-left: 3px solid #3b82f6; color: #e8e8ea; padding: 10px 14px; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.4); max-width: 360px; font-size: 13px; animation: toast-in .2s ease-out; }
+  .toast.error { border-left-color: #ef4444; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px); } }
+  #drop-overlay { position: fixed; inset: 12px; border: 3px dashed #3b82f6; border-radius: 16px; background: rgba(30,31,34,.85); display: flex; align-items: center; justify-content: center; font-size: 22px; color: #e8e8ea; z-index: 40; pointer-events: none; }
+  .page-number { position: absolute; left: 0; right: 0; text-align: center; font-size: 3.2mm; line-height: 1; }
   .folder-card { background: #1e1f22; border: 1px solid #313338; border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
   .folder-head { display: flex; align-items: center; gap: 10px; }
   .folder-head b { flex: 1; color: #e8e8ea; font-size: 15px; }
@@ -87,7 +107,7 @@
     :root { --zoom: 1 !important; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { display: block; height: auto; background: none; }
-    aside, .sheet .label, #hidden-tray, .hide-btn, .crop-btn, .crop-bar, .drop-marker { display: none !important; }
+    aside, .sheet .label, #hidden-tray, .hide-btn, .crop-btn, .crop-bar, .drop-marker, #toasts, #drop-overlay { display: none !important; }
     .imgbox.cropping { outline: none; }
     main { padding: 0; overflow: visible; }
     #pages { display: block; }
@@ -104,16 +124,19 @@
 <body>
 <aside>
   <h1>Photo Grid</h1>
-  <button id="pick">Choose photo folder…</button>
-  <button id="pick-photos">Choose photos…</button>
-  <button id="home" hidden>All folders and projects</button>
+  <button id="home" hidden>← All folders and projects</button>
   <div class="info" id="info">No folder loaded.</div>
   <div class="info" id="save-info" hidden></div>
   <label class="row" id="autosave-row" hidden><input type="checkbox" id="autosave"> Autosave</label>
   <div class="progress" id="progress" hidden><div class="bar"><div></div></div><span></span></div>
+  <div class="undo-row">
+    <button id="undo" title="Undo (⌘Z / Ctrl+Z)" disabled>↶ Undo</button>
+    <button id="redo" title="Redo (⇧⌘Z / Ctrl+Y)" disabled>↷ Redo</button>
+  </div>
 
   <div class="group" id="project-group" hidden>
-    <label>Project <select id="project"></select></label>
+    <h2>Project</h2>
+    <select id="project" aria-label="Project"></select>
     <div class="buttons">
       <button id="project-new" title="Start a new project as a copy of this one">New</button>
       <button id="project-rename">Rename</button>
@@ -124,6 +147,7 @@
   <input type="file" id="photos-input" multiple accept="image/*,.heic,.heif,.json" hidden>
 
   <div class="group">
+    <h2>Page</h2>
     <label>Layout <select id="layout"></select></label>
     <label>Style <select id="look"></select></label>
     <label>Photo fit
@@ -136,9 +160,11 @@
     <label><span>Gap: <span id="gap-val"></span></span><input type="range" id="gap" min="0" max="20" step="1"></label>
     <label class="row">Page color <input type="color" id="bg"></label>
     <label class="row"><input type="checkbox" id="captions"> Show file names</label>
+    <label class="row"><input type="checkbox" id="pageNumbers"> Page numbers</label>
   </div>
 
   <div class="group">
+    <h2>Notes</h2>
     <label>Notes area on each page
       <select id="pageNotes"><option value="none">None</option><option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option></select>
     </label>
@@ -154,10 +180,11 @@
   </div>
 
   <div class="group">
-    <div class="info">Drop a photo on another to swap them, or between two photos to insert it there.</div>
+    <h2>Arrange</h2>
+    <div class="info">Drop a photo on another to swap them, or between two photos to insert it there. Double-click a photo to move or zoom it inside its frame.</div>
     <label>Sort photos
       <select id="sort">
-        <option value="custom" disabled>Custom order</option>
+        <option value="custom">Custom order</option>
         <option value="name-asc">Name (A-Z)</option>
         <option value="name-desc">Name (Z-A)</option>
         <option value="date-asc">Date taken (oldest first)</option>
@@ -167,10 +194,12 @@
   </div>
 
   <div class="group">
-    <label>Zoom <input type="range" id="zoom" min="0.2" max="1.2" step="0.05"></label>
+    <h2>View</h2>
+    <label>Zoom (or Ctrl/⌘ + scroll) <input type="range" id="zoom" min="0.2" max="1.2" step="0.05"></label>
   </div>
 
   <div class="group">
+    <h2>Export</h2>
     <button class="primary" id="export-pdf">Export PDF</button>
     <button id="export-jpg">Export JPG pages + zip</button>
     <button id="print">Print…</button>
@@ -181,16 +210,28 @@
 
 <main>
   <div id="empty">
-    <h2>Your photo folders</h2>
-    <div id="recent"></div>
-    <div class="start">
-      <div class="start-buttons">
-        <button class="primary" id="pick-big">Choose photo folder…</button>
-        <button id="pick-photos-big">Choose photos…</button>
+    <section class="hero">
+      <div>
+        <div class="brand"><img src="icon.svg" alt=""> Photo Grid</div>
+        <h2>Turn a folder of photos into printable A4 pages.</h2>
+        <p>Pick a folder, drag photos into the order you like, choose a layout and style, add notes, and export a full-quality PDF. It all runs in your browser and works offline. Your photos never leave this computer.</p>
+        <div class="start-buttons">
+          <button class="primary" id="pick-big">Choose photo folder…</button>
+          <button id="pick-photos-big">Choose photos…</button>
+        </div>
+        <div class="drop-hint">or drop a folder or photos anywhere on this page</div>
       </div>
-      <div>Your photos stay on this computer.<br>Pick a folder or some photos, then drag them to rearrange.</div>
-    </div>
+      <img class="hero-image" src="assets/hero.jpg" alt="Two A4 pages with photos arranged in a grid">
+    </section>
+    <ul class="features">
+      <li><b>Drag to arrange</b>Drop on a photo to swap, between photos to insert. Move and zoom the crop.</li>
+      <li><b>12 layouts, 4 styles</b>Grids, hero pages and mosaics, clean or Polaroid, portrait or landscape.</li>
+      <li><b>Notes</b>Write on a photo, below it, or in a notes area on each page, with lines or dots.</li>
+      <li><b>Private and offline</b>Projects are saved next to your photos. HEIC works too.</li>
+    </ul>
     <div class="info" id="firefox-note" hidden>Firefox asks whether to "upload" the folder. Nothing leaves your computer, Firefox uses that word whenever a page reads a folder. "Choose photos…" does not ask.</div>
+    <h3 id="recent-title" hidden>Your folders</h3>
+    <div id="recent"></div>
     <div id="browser-copies"></div>
   </div>
   <div id="pages"></div>
@@ -199,6 +240,8 @@
     <div class="thumbs"></div>
   </div>
 </main>
+<div id="toasts"></div>
+<div id="drop-overlay" hidden>Drop a folder or photos to open them</div>
 
 <script>
 const IMAGE_FILE = /\.(jpe?g|png|webp|gif|avif|bmp|heic|heif)$/i;
@@ -250,7 +293,7 @@ const FONT = 'system-ui, -apple-system, sans-serif';
 
 const DEFAULT_SETTINGS = {
   layout: 'g2x3', look: 'clean', fit: 'cover', orientation: 'portrait', margin: 10, gap: 4, bg: '#ffffff', captions: false,
-  pageNotes: 'none', pageNoteSize: 40, photoNotes: 'off', photoNoteSize: 14, noteLines: 'lines', sort: 'date-asc', zoom: 0.5,
+  pageNotes: 'none', pageNoteSize: 40, photoNotes: 'off', photoNoteSize: 14, noteLines: 'lines', sort: 'date-asc', pageNumbers: false, zoom: 0.5,
 };
 
 let folderName = null;
@@ -274,6 +317,14 @@ let settings = withDefaults({});
 let dragFrom = null;
 
 const $ = id => document.getElementById(id);
+
+function toast(message, kind = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = message;
+  $('toasts').append(el);
+  setTimeout(() => el.remove(), kind === 'error' ? 8000 : 4000);
+}
 const pagesEl = $('pages');
 
 // ---------- saving ----------
@@ -300,9 +351,72 @@ function readSavedProjects(saved, name = folderName) {
   return { current: name, projects: { [name]: saved } };
 }
 
+// undo keeps snapshots of the arrangement; zoom is left out because it only changes the view
+let undoStack = [];
+let redoStack = [];
+let lastSnapshot = null;
+
+const snapshot = () => JSON.stringify({ ...projectState(), settings: { ...settings, zoom: 0 } });
+
+function recordHistory() {
+  const now = snapshot();
+  if (lastSnapshot !== null && now !== lastSnapshot) {
+    undoStack.push(lastSnapshot);
+    if (undoStack.length > 200) undoStack.shift();
+    redoStack = [];
+  }
+  lastSnapshot = now;
+  updateUndoButtons();
+}
+
+function forgetHistory() {
+  undoStack = [];
+  redoStack = [];
+  lastSnapshot = null;
+  updateUndoButtons();
+}
+
+function updateUndoButtons() {
+  $('undo').disabled = !undoStack.length;
+  $('redo').disabled = !redoStack.length;
+}
+
+function restoreSnapshot(json) {
+  const state = JSON.parse(json);
+  const known = state.order.filter(n => photos.has(n));
+  const knownSet = new Set(known);
+  order = [...known, ...[...photos.keys()].filter(n => !knownSet.has(n))];
+  hidden = new Set(state.hidden.filter(n => photos.has(n)));
+  notes = state.notes;
+  crops = state.crops || {};
+  settings = { ...state.settings, zoom: settings.zoom };
+  cropping = null;
+  slotNodes.clear();
+  lastSnapshot = json;
+  save();
+  syncControls();
+  animateChange(render);
+}
+
+function undo() {
+  if (!undoStack.length) return;
+  redoStack.push(snapshot());
+  restoreSnapshot(undoStack.pop());
+}
+
+function redo() {
+  if (!redoStack.length) return;
+  undoStack.push(snapshot());
+  restoreSnapshot(redoStack.pop());
+}
+
+$('undo').onclick = undo;
+$('redo').onclick = redo;
+
 let writeTimer = null;
 function save() {
   if (!folderName) return;
+  recordHistory();
   clearTimeout(writeTimer);
   writeTimer = setTimeout(() => {
     if (folderHandle) writeStateFile();
@@ -539,6 +653,7 @@ function closeFolder() {
   cropping = null;
   unsaved = false;
   settings = withDefaults({});
+  forgetHistory();
 }
 
 // entries: [{ name, key, file }]; key changes when the file content changes
@@ -631,7 +746,7 @@ async function pickFolder() {
   try {
     await openFolder(await showDirectoryPicker({ id: 'photogrid', mode: 'readwrite' }));
   } catch (e) {
-    if (e.name !== 'AbortError') alert(e.message);
+    if (e.name !== 'AbortError') toast(e.message, 'error');
   }
 }
 
@@ -693,9 +808,10 @@ async function showRecentFolders() {
       + `<button class="forget" data-forget="${i}" title="Remove from this list (the folder is not touched)">×</button></div>`
       + `<div class="folder-projects">${body}</div></div>`;
   }));
-  $('recent').innerHTML = cards.length
+  $('recent-title').hidden = !cards.length;
+  $('recent').innerHTML = cards.length || window.showDirectoryPicker
     ? cards.join('')
-    : window.showDirectoryPicker ? 'No folders yet.' : 'This browser cannot remember folders. Use Chrome or Edge to see your folders here.';
+    : '<div class="info">This browser cannot remember folders. Use Chrome or Edge to see your recent folders here.</div>';
 }
 
 $('recent').addEventListener('click', async e => {
@@ -713,7 +829,7 @@ $('recent').addEventListener('click', async e => {
   try {
     await openFolder(handle, e.target.dataset.project);
   } catch (err) {
-    alert(`Could not open "${handle.name}". It may have been moved or deleted.`);
+    toast(`Could not open "${handle.name}". It may have been moved or deleted.`, 'error');
   }
 });
 
@@ -724,41 +840,92 @@ $('home').onclick = () => {
   showRecentFolders();
 };
 
-$('file-input').addEventListener('change', async e => {
-  const all = [...e.target.files];
-  if (!all.length) return;
-  const name = all[0].webkitRelativePath.split('/')[0];
-  const inFolder = all.filter(f => f.webkitRelativePath.split('/').length === 2);
-  const stateFile = inFolder.find(f => f.name === STATE_FILE);
+// files from a folder that cannot be written to, or single photos; projects come from photo-grid.json or autosave
+async function openFiles(name, files, stateFile) {
+  const images = files.filter(f => IMAGE_FILE.test(f.name));
+  if (!images.length) return toast('No photos found there.', 'error');
   let savedState = null;
   try { savedState = stateFile && JSON.parse(await stateFile.text()); } catch {}
-  const copy = (await browserCopies())[name];
-  savedState = newerState(savedState, copy);
+  savedState = newerState(savedState, (await browserCopies())[name]);
   closeFolder();
-  applyList(name, inFolder.filter(f => IMAGE_FILE.test(f.name)).map(fileEntry), savedState);
+  applyList(name, images.map(fileEntry), savedState);
   unsaved = false;
   updateSaveInfo();
+}
+
+$('file-input').addEventListener('change', e => {
+  const all = [...e.target.files];
   e.target.value = '';
+  if (!all.length) return;
+  const inFolder = all.filter(f => f.webkitRelativePath.split('/').length === 2);
+  openFiles(all[0].webkitRelativePath.split('/')[0], inFolder, inFolder.find(f => f.name === STATE_FILE));
 });
 
-// single photos have no folder to save into, their projects live in a browser copy or a downloaded file
+// single photos have no folder to save into, their projects live in autosave or a downloaded file
 const SELECTION = 'Selected photos';
 
-$('photos-input').addEventListener('change', async e => {
+$('photos-input').addEventListener('change', e => {
   const files = [...e.target.files];
   e.target.value = '';
-  const images = files.filter(f => IMAGE_FILE.test(f.name));
-  if (!images.length) return;
-  const stateFile = files.find(f => f.name.endsWith('.json'));
-  let savedState = null;
-  try { savedState = stateFile && JSON.parse(await stateFile.text()); } catch {}
-  const copy = (await browserCopies())[SELECTION];
-  savedState = newerState(savedState, copy);
-  closeFolder();
-  applyList(SELECTION, images.map(fileEntry), savedState);
-  unsaved = false;
-  updateSaveInfo();
+  openFiles(SELECTION, files, files.find(f => f.name.endsWith('.json')));
 });
+
+function readFolderEntry(entry) {
+  return new Promise(resolve => {
+    const reader = entry.createReader();
+    const found = [];
+    const next = () => reader.readEntries(async batch => {
+      if (!batch.length) {
+        const files = await Promise.all(found.filter(e => e.isFile).map(e => new Promise(ok => e.file(ok, () => ok(null)))));
+        return resolve(files.filter(Boolean));
+      }
+      found.push(...batch);
+      next();
+    }, () => resolve([]));
+    next();
+  });
+}
+
+const draggingFiles = e => dragFrom === null && [...(e.dataTransfer?.types || [])].includes('Files');
+
+document.addEventListener('dragover', e => {
+  if (!draggingFiles(e)) return;
+  e.preventDefault();
+  $('drop-overlay').hidden = false;
+});
+document.addEventListener('dragleave', e => {
+  if (!e.relatedTarget) $('drop-overlay').hidden = true;
+});
+document.addEventListener('drop', e => {
+  if (!draggingFiles(e)) return;
+  e.preventDefault();
+  $('drop-overlay').hidden = true;
+  // the dropped items are only readable during this event, so collect everything first
+  const items = [...e.dataTransfer.items].filter(item => item.kind === 'file');
+  const handles = items.map(item => item.getAsFileSystemHandle?.());
+  const entries = items.map(item => item.webkitGetAsEntry?.());
+  const files = [...e.dataTransfer.files];
+  openDropped(handles, entries, files);
+});
+
+async function openDropped(handles, entries, files) {
+  try {
+    for (const promise of handles) {
+      const handle = await promise;
+      if (handle?.kind !== 'directory') continue;
+      await handle.requestPermission({ mode: 'readwrite' });
+      return openFolder(handle);
+    }
+    const folder = entries.find(entry => entry?.isDirectory);
+    if (folder) {
+      const inFolder = await readFolderEntry(folder);
+      return openFiles(folder.name, inFolder, inFolder.find(f => f.name === STATE_FILE));
+    }
+    openFiles(SELECTION, files, files.find(f => f.name.endsWith('.json')));
+  } catch (err) {
+    toast('Could not open what was dropped: ' + err.message, 'error');
+  }
+}
 
 $('download-state').onclick = () => {
   download(new Blob([JSON.stringify(currentState(), null, 2)], { type: 'application/json' }), STATE_FILE);
@@ -838,6 +1005,11 @@ function fitRect(box, iw, ih, mode) {
   const s = mode === 'cover' ? Math.max(box.w / iw, box.h / ih) : Math.min(box.w / iw, box.h / ih);
   const w = iw * s, h = ih * s;
   return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
+}
+
+// centered in the bottom margin, or just above the edge when the margin is small
+function pageNumberY() {
+  return pageSize().H - Math.max(settings.margin / 2, 3);
 }
 
 function textColor(onFrame) {
@@ -983,6 +1155,7 @@ function render() {
   const pageRule = `@page { size: A4 ${settings.orientation}; margin: 0; }`;
   if ($('page-size').textContent !== pageRule) $('page-size').textContent = pageRule;
   $('empty').hidden = !!folderName;
+  document.body.classList.toggle('landing', !folderName);
   $('home').hidden = !folderName;
   const items = visible();
   const { slots, note } = pageLayout();
@@ -1015,6 +1188,11 @@ function render() {
       setStyle(el, place(slot));
       return el;
     });
+    if (settings.pageNumbers) {
+      const y = pageNumberY();
+      children.push(reuse(otherNodes, `page-number:${p}`, `${p + 1}|${y}|${settings.bg}`,
+        `<div class="page-number" style="top:${mm(y - 1.6)};color:${textColor(false)}">${p + 1}</div>`));
+    }
     if (note) {
       const id = p + 1;
       children.push(reuse(otherNodes, `page-note:${id}`, noteHtml(note, '', 'page', id, 'Notes for this page…', false), noteHtml(note, notes.page[id], 'page', id, 'Notes for this page…', false)));
@@ -1259,6 +1437,23 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') endCrop();
+  const typing = e.target.closest?.('.note, input, select, textarea');
+  if (!folderName || typing || !(e.metaKey || e.ctrlKey)) return;
+  const key = e.key.toLowerCase();
+  if (key === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
+  if ((key === 'z' && e.shiftKey) || key === 'y') { e.preventDefault(); redo(); }
+});
+
+$('pages').closest('main').addEventListener('wheel', e => {
+  if (!folderName || !(e.ctrlKey || e.metaKey) || e.target.closest('.imgbox.cropping')) return;
+  e.preventDefault();
+  settings.zoom = Math.min(1.2, Math.max(0.2, settings.zoom * Math.exp(-e.deltaY * 0.004)));
+  syncControls();
+  render();
+}, { passive: false });
+
+window.addEventListener('beforeunload', e => {
+  if (unsaved && !autosave && !folderHandle) e.preventDefault();
 });
 
 let saveTimer = null;
@@ -1338,12 +1533,13 @@ async function applySort(animate = false) {
   if (next.length !== order.length) return applySort(animate);
   if (next.join('\n') === order.join('\n')) return;
   order = next;
+  if (!animate) lastSnapshot = null;
   save();
   animate ? animateChange(render) : render();
 }
 
 $('sort').addEventListener('change', e => {
-  if (!folderName) return syncControls();
+  if (!folderName || e.target.value === 'custom') return syncControls();
   if (settings.sort === 'custom' && !confirm('Replace your custom order with this sorting?')) return syncControls();
   settings.sort = e.target.value;
   save();
@@ -1353,6 +1549,7 @@ $('sort').addEventListener('change', e => {
 // ---------- projects ----------
 
 function openProject(name) {
+  forgetHistory();
   const project = projects[name];
   projectName = name;
   const known = project.order.filter(n => photos.has(n));
@@ -1374,7 +1571,7 @@ function askProjectName(question, suggestion) {
   const name = prompt(question, suggestion)?.trim();
   if (!name) return null;
   if (name !== projectName && projects[name]) {
-    alert(`There is already a project called "${name}".`);
+    toast(`There is already a project called "${name}".`, 'error');
     return null;
   }
   return name;
@@ -1405,7 +1602,7 @@ $('project-rename').onclick = () => {
 
 $('project-delete').onclick = () => {
   const others = Object.keys(projects).filter(n => n !== projectName);
-  if (!others.length) return alert('This is the only project. Create another one before deleting it.');
+  if (!others.length) return toast('This is the only project. Create another one before deleting it.', 'error');
   if (!confirm(`Delete the project "${projectName}"? Its order, notes and settings will be lost. The photos are not touched.`)) return;
   delete projects[projectName];
   openProject(others[0]);
@@ -1425,7 +1622,7 @@ function syncProjects() {
 for (const [key, l] of Object.entries(LAYOUTS)) $('layout').add(new Option(l.name, key));
 for (const [key, l] of Object.entries(LOOKS)) $('look').add(new Option(l.name, key));
 
-const CONTROLS = ['layout', 'look', 'fit', 'orientation', 'margin', 'gap', 'bg', 'captions', 'pageNotes', 'pageNoteSize', 'photoNotes', 'photoNoteSize', 'noteLines', 'zoom'];
+const CONTROLS = ['layout', 'look', 'fit', 'orientation', 'margin', 'gap', 'bg', 'captions', 'pageNotes', 'pageNoteSize', 'photoNotes', 'photoNoteSize', 'noteLines', 'pageNumbers', 'zoom'];
 
 function syncControls() {
   for (const key of CONTROLS) {
@@ -1538,6 +1735,13 @@ function drawPage(ctx, scale, names, layout, pageNumber) {
   ctx.fillStyle = settings.bg;
   ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   if (note) drawNote(ctx, { x: note.x * scale, y: note.y * scale, w: note.w * scale, h: note.h * scale }, notes.page[pageNumber], scale, false);
+  if (settings.pageNumbers) {
+    ctx.fillStyle = textColor(false);
+    ctx.font = `${3.2 * scale}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(pageNumber), pageSize().W / 2 * scale, pageNumberY() * scale);
+  }
   return slots.reduce((done, slot, s) => done.then(async () => {
     const name = names[s];
     if (!name) return;
@@ -1761,9 +1965,11 @@ async function runExport(button, idleText, work) {
   button.disabled = true;
   busy = true;
   try {
-    button.textContent = await work(text => { button.textContent = text; });
+    const result = await work(text => { button.textContent = text; });
+    button.textContent = result;
+    toast(result.replace(/ ✓$/, ''));
   } catch (e) {
-    alert('Export failed: ' + e.message);
+    toast('Export failed: ' + e.message, 'error');
   } finally {
     button.disabled = false;
     busy = false;
@@ -1802,8 +2008,8 @@ function exportPdf() {
   });
 }
 
-$('pick').onclick = $('pick-big').onclick = pickFolder;
-$('pick-photos').onclick = $('pick-photos-big').onclick = () => $('photos-input').click();
+$('pick-big').onclick = pickFolder;
+$('pick-photos-big').onclick = () => $('photos-input').click();
 $('export-jpg').onclick = exportPages;
 $('export-pdf').onclick = exportPdf;
 $('print').onclick = () => window.print();

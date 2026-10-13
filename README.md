@@ -10,7 +10,7 @@ Arrange photos from a folder into printable A4 pages, add notes, and export them
 
 ## Use
 
-Open the page, click "Choose photo folder…" and pick a folder with photos. Drag photos to reorder them. A folder can hold several named projects, each with its own order, notes and settings.
+Open the page and choose a photo folder or some photos, or drop them onto the page. Drop a photo on another to swap them or between two to insert it, double-click a photo to move or zoom its crop, and undo with ⌘Z / Ctrl+Z. A folder can hold several named projects, each with its own order, notes and settings.
 
 Everything is saved in `photo-grid.json` inside the photo folder, and exports go into `export/<project>/` there. The browser only remembers which folder was opened last. Chrome and Edge write these files directly; in Safari and Firefox you download `photo-grid.json` and put it into the folder yourself, and exports are downloaded. Autosave, on by default, also keeps a copy of each folder's projects in the browser (a few KB per project); copies can be deleted from the start page. Instead of a folder you can also choose individual photos.
 

@@ -14,6 +14,7 @@ photo-grid.json
 .cache/
 .DS_Store
 
-# The README graphics are the only committed images
+# The README graphics and the landing image are the only committed images
 !docs/feature.png
 !docs/screenshot.png
+!assets/hero.jpg
