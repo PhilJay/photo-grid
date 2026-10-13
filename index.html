@@ -36,6 +36,10 @@
   .folder-head b { flex: 1; color: #e8e8ea; font-size: 15px; }
   .folder-head span { font-size: 12px; }
   .folder-projects { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 12px; }
+  #browser-copies { display: flex; flex-direction: column; gap: 10px; }
+  #browser-copies h3 { display: flex; align-items: center; gap: 10px; margin: 16px 0 0; font-size: 16px; color: #e8e8ea; }
+  #browser-copies h3 button { font-size: 13px; font-weight: normal; }
+  #browser-copies h3 span { flex: 1; font-size: 12px; font-weight: normal; color: #9a9ca3; }
   .forget { background: none; border: none; color: #9a9ca3; font-size: 18px; padding: 0 4px; }
   #pages { display: flex; flex-wrap: wrap; gap: 36px; justify-content: center; align-items: flex-start; }
   .sheet { display: flex; flex-direction: column; gap: 6px; }
@@ -103,6 +107,7 @@
   <div class="info" id="info">No folder loaded.</div>
   <div class="info" id="save-info" hidden></div>
   <button id="download-state" hidden></button>
+  <label class="row" id="keep-copy-row" hidden><input type="checkbox" id="keep-copy"> Also keep a copy in this browser</label>
   <div class="progress" id="progress" hidden><div class="bar"><div></div></div><span></span></div>
 
   <div class="group" id="project-group" hidden>
@@ -178,6 +183,7 @@
       <button class="primary" id="pick-big">Choose photo folder…</button>
       <div>Your photos stay on this computer. Nothing is uploaded.<br>Pick a folder, then drag photos to rearrange them.</div>
     </div>
+    <div id="browser-copies"></div>
   </div>
   <div id="pages"></div>
   <div id="hidden-tray" hidden>
@@ -275,8 +281,10 @@ function projectState() {
 }
 
 function currentState() {
-  return { version: 2, current: projectName, projects: { ...projects, [projectName]: projectState() } };
+  return { version: 2, savedAt: Date.now(), current: projectName, projects: { ...projects, [projectName]: projectState() } };
 }
+
+const newerState = (a, b) => !a ? b : !b ? a : (b.savedAt || 0) > (a.savedAt || 0) ? b : a;
 
 function readSavedProjects(saved, name = folderName) {
   if (!saved) return { current: null, projects: {} };
@@ -287,24 +295,60 @@ function readSavedProjects(saved, name = folderName) {
 let writeTimer = null;
 function save() {
   if (!folderName) return;
-  if (folderHandle) {
-    clearTimeout(writeTimer);
-    writeTimer = setTimeout(writeStateFile, 500);
-  } else {
+  clearTimeout(writeTimer);
+  writeTimer = setTimeout(() => {
+    if (folderHandle) writeStateFile();
+    if (keepCopy) writeBrowserCopy();
+  }, 500);
+  if (!folderHandle) {
     unsaved = true;
     updateSaveInfo();
   }
 }
 
+// an optional copy of a folder's projects in this browser, only kept when the user turns it on
+let keepCopy = false;
+
+async function browserCopies() {
+  return (await dbGet('copies')) || {};
+}
+
+async function writeBrowserCopy() {
+  const copies = await browserCopies();
+  copies[folderName] = currentState();
+  await dbSet('copies', copies);
+}
+
+async function deleteBrowserCopy(name) {
+  const copies = await browserCopies();
+  delete copies[name];
+  await dbSet('copies', copies);
+  if (name === folderName) {
+    keepCopy = false;
+    updateSaveInfo();
+  }
+}
+
+$('keep-copy').addEventListener('change', async e => {
+  keepCopy = e.target.checked;
+  keepCopy ? await writeBrowserCopy() : await deleteBrowserCopy(folderName);
+  updateSaveInfo();
+});
+
 function updateSaveInfo() {
   $('save-info').hidden = !folderName;
   $('save-info').textContent = folderHandle
     ? `Projects are saved in ${STATE_FILE} inside this folder.`
-    : `This browser cannot save into the folder. Download ${STATE_FILE} and put it into the photo folder to keep your projects.`;
+    : keepCopy
+      ? `Projects are kept in this browser. Download ${STATE_FILE} to also keep them next to the photos.`
+      : `This browser cannot save into the folder. Download ${STATE_FILE} and put it into the photo folder, or keep a copy in this browser.`;
   const btn = $('download-state');
   btn.hidden = !folderName || !!folderHandle;
-  btn.classList.toggle('primary', unsaved);
-  btn.textContent = unsaved ? `Download ${STATE_FILE} (unsaved changes)` : `Download ${STATE_FILE}`;
+  const needsDownload = unsaved && !keepCopy;
+  btn.classList.toggle('primary', needsDownload);
+  btn.textContent = needsDownload ? `Download ${STATE_FILE} (unsaved changes)` : `Download ${STATE_FILE}`;
+  $('keep-copy-row').hidden = !folderName;
+  $('keep-copy').checked = keepCopy;
 }
 
 async function writeFile(dir, name, data) {
@@ -489,6 +533,8 @@ function closeFolder() {
   crops = {};
   cropping = null;
   unsaved = false;
+  keepCopy = false;
+  settings = withDefaults({});
 }
 
 // entries: [{ name, key, file }]; key changes when the file content changes
@@ -563,8 +609,10 @@ function listHandle(handle) {
 async function openFolder(handle, project) {
   const list = listHandle(handle);
   const entries = await list();
-  const savedState = await readStateFile(handle);
+  const copy = (await browserCopies())[handle.name];
+  const savedState = newerState(await readStateFile(handle), copy);
   closeFolder();
+  keepCopy = !!copy;
   folderHandle = await handle.queryPermission({ mode: 'readwrite' }) === 'granted' ? handle : null;
   listSource = list;
   applyList(handle.name, entries, savedState);
@@ -597,7 +645,37 @@ async function rememberFolder(handle) {
   await dbSet('folders', [{ handle, opened: Date.now() }, ...others].slice(0, 30));
 }
 
+const formatSize = bytes => bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
+const sizeOf = value => new Blob([JSON.stringify(value)]).size;
+
+async function showBrowserCopies() {
+  const copies = Object.entries(await browserCopies());
+  $('browser-copies').innerHTML = !copies.length ? '' :
+    `<h3>Saved in this browser <span>${formatSize(sizeOf(Object.fromEntries(copies)))} in total</span><button data-delete-all>Delete all</button></h3>`
+    + copies.map(([name, state]) => {
+      const names = Object.keys(readSavedProjects(state, name).projects);
+      return `<div class="folder-card"><div class="folder-head"><b>${escapeHtml(name)}</b>`
+        + `<span>${formatSize(sizeOf(state))}${state.savedAt ? `, saved ${new Date(state.savedAt).toLocaleString()}` : ''}</span>`
+        + `<button data-delete-copy="${escapeHtml(name)}">Delete</button></div>`
+        + `<div class="folder-projects">Projects: ${names.map(escapeHtml).join(', ')}</div></div>`;
+    }).join('')
+    + `<div class="info">A copy is used when you open a folder with the same name. Deleting it does not touch the folder or its ${STATE_FILE}.</div>`;
+}
+
+$('browser-copies').addEventListener('click', async e => {
+  const name = e.target.dataset.deleteCopy;
+  if (name !== undefined) {
+    if (!confirm(`Delete the copy of "${name}" from this browser?`)) return;
+    await deleteBrowserCopy(name);
+  } else if (e.target.dataset.deleteAll !== undefined) {
+    if (!confirm('Delete all copies from this browser?')) return;
+    for (const copy of Object.keys(await browserCopies())) await deleteBrowserCopy(copy);
+  } else return;
+  showBrowserCopies();
+});
+
 async function showRecentFolders() {
+  showBrowserCopies();
   const folders = await recentFolders();
   const cards = await Promise.all(folders.map(async ({ handle, opened }, i) => {
     const allowed = await handle.queryPermission({ mode: 'readwrite' }) === 'granted';
@@ -651,7 +729,10 @@ $('file-input').addEventListener('change', async e => {
   const stateFile = inFolder.find(f => f.name === STATE_FILE);
   let savedState = null;
   try { savedState = stateFile && JSON.parse(await stateFile.text()); } catch {}
+  const copy = (await browserCopies())[name];
+  savedState = newerState(savedState, copy);
   closeFolder();
+  keepCopy = !!copy;
   applyList(name, inFolder.filter(f => IMAGE_FILE.test(f.name)).map(fileEntry), savedState);
   unsaved = false;
   updateSaveInfo();

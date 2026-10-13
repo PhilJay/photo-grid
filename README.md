@@ -10,7 +10,7 @@ Arrange photos from a folder into printable A4 pages, add notes, and export them
 
 Open the page, click "Choose photo folder…" and pick a folder with photos. Drag photos to reorder them. A folder can hold several named projects, each with its own order, notes and settings.
 
-Everything is saved in `photo-grid.json` inside the photo folder, and exports go into `export/<project>/` there. The browser only remembers which folder was opened last. Chrome and Edge write these files directly; in Safari and Firefox you download `photo-grid.json` and put it into the folder yourself, and exports are downloaded.
+Everything is saved in `photo-grid.json` inside the photo folder, and exports go into `export/<project>/` there. The browser only remembers which folder was opened last. Chrome and Edge write these files directly; in Safari and Firefox you download `photo-grid.json` and put it into the folder yourself, and exports are downloaded. Optionally, a folder's projects can also be kept in the browser (a few KB per project) and deleted again from the start page.
 
 HEIC photos that the browser cannot show itself are converted in the browser with libheif. See `vendor/README.md` for its license (LGPL-3.0).
 
