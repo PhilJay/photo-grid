@@ -1,5 +1,9 @@
 # Photo Grid
 
+![Photo Grid](docs/feature.png)
+
+**[Open Photo Grid](https://philjay.github.io/photo-grid/)**
+
 Arrange photos from a folder into printable A4 pages, add notes, and export them as a full-quality PDF or as one JPG per page plus a zip. Runs in the browser, works offline, and photos never leave your computer.
 
 ## Use
@@ -21,3 +25,5 @@ Then open http://localhost:8000.
 ## Publish
 
 Published with GitHub Pages from `main` at https://philjay.github.io/photo-grid/. After the first visit the app also works offline.
+
+The README graphic is rendered from `docs/feature.html` and uses drawn scenes, no real photos.

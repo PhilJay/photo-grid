@@ -1,0 +1,102 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { width: 1600px; height: 1000px; overflow: hidden; font-family: -apple-system, "SF Pro Display", system-ui, sans-serif; color: #e8e8ea;
+    background: radial-gradient(circle at 78% 40%, rgba(59,130,246,.28), transparent 45%), radial-gradient(circle at 10% 90%, rgba(236,72,153,.12), transparent 40%), linear-gradient(135deg, #17181b, #2b2d31); }
+  .text { position: absolute; left: 110px; top: 210px; width: 600px; }
+  .logo { display: flex; align-items: center; gap: 22px; margin-bottom: 34px; }
+  .logo svg { width: 84px; height: 84px; }
+  h1 { font-size: 76px; font-weight: 750; letter-spacing: -2px; }
+  .tagline { font-size: 34px; line-height: 1.3; color: #c9cbd1; margin-bottom: 44px; font-weight: 450; }
+  .chips { display: flex; flex-direction: column; gap: 16px; }
+  .chip { display: flex; align-items: center; gap: 14px; font-size: 24px; color: #e8e8ea; }
+  .chip i { width: 34px; height: 34px; border-radius: 10px; background: rgba(59,130,246,.18); color: #7fb0ff; display: grid; place-items: center; font-style: normal; font-size: 19px; }
+  .privacy { margin-top: 44px; font-size: 20px; color: #9a9ca3; }
+
+  .page { position: absolute; width: 420px; height: 594px; background: #fff; border-radius: 4px; box-shadow: 0 30px 80px rgba(0,0,0,.55), 0 4px 14px rgba(0,0,0,.3); }
+  .back { left: 1060px; top: 150px; transform: rotate(5deg); }
+  .front { left: 800px; top: 230px; transform: rotate(-4deg); }
+  .slot { position: absolute; }
+  .pic { position: absolute; overflow: hidden; }
+  .pic svg { width: 100%; height: 100%; display: block; }
+  .polaroid { position: absolute; background: #fff; box-shadow: 0 3px 10px rgba(0,0,0,.18); }
+  .overlay { position: absolute; left: 0; right: 0; bottom: 0; padding: 26px 10px 8px; color: #fff; font-size: 13px; background: linear-gradient(to top, rgba(0,0,0,.65), rgba(0,0,0,.45) 60%, transparent); text-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .notes { position: absolute; left: 24px; right: 24px; bottom: 22px; height: 104px; background-image: linear-gradient(to bottom, transparent 25px, #d5d5d8 25px, #d5d5d8 26px); background-size: 100% 26px; font-family: "Bradley Hand", "Segoe Print", cursive; font-size: 17px; line-height: 26px; color: #3d4a66; padding-right: 6px; text-align: right; }
+  .marker { position: absolute; width: 6px; border-radius: 3px; background: #3b82f6; box-shadow: 0 0 0 4px rgba(59,130,246,.3); }
+  .ghost { position: absolute; width: 120px; height: 92px; border-radius: 4px; overflow: hidden; transform: rotate(8deg); box-shadow: 0 18px 40px rgba(0,0,0,.45); opacity: .95; outline: 3px solid #fff; }
+  .cursor { position: absolute; width: 30px; }
+  .crop { position: absolute; width: 26px; height: 26px; border-radius: 50%; background: rgba(0,0,0,.6); color: #fff; display: grid; place-items: center; font-size: 15px; }
+</style>
+</head>
+<body>
+<div class="text">
+  <div class="logo">
+    <svg viewBox="0 0 512 512"><rect width="512" height="512" rx="96" fill="#1e1f22"/><rect x="96" y="96" width="148" height="148" rx="20" fill="#3b82f6"/><rect x="268" y="96" width="148" height="148" rx="20" fill="#e8e8ea"/><rect x="96" y="268" width="148" height="148" rx="20" fill="#e8e8ea"/><rect x="268" y="268" width="148" height="148" rx="20" fill="#3b82f6"/></svg>
+    <h1>Photo Grid</h1>
+  </div>
+  <div class="tagline">Turn a folder of photos into printable A4 pages, right in your browser.</div>
+  <div class="chips">
+    <div class="chip"><i>⇄</i>Drag to swap or insert, move the crop</div>
+    <div class="chip"><i>✎</i>Notes on photos and pages</div>
+    <div class="chip"><i>▦</i>12 layouts, 4 styles, named projects</div>
+    <div class="chip"><i>⤓</i>Full-quality PDF or JPG export, HEIC support</div>
+  </div>
+  <div class="privacy">Works offline. Your photos never leave your computer.</div>
+</div>
+
+<div class="page back" id="back"></div>
+<div class="page front" id="front"></div>
+
+<script>
+// simple drawn scenes instead of real photos
+const scenes = {
+  mountains: ['#9ad0f5', '#e7f3fb', [['#5d7fa3', '0,300 0,170 90,90 170,160 250,70 330,140 400,100 400,300'], ['#3d5a78', '0,300 0,220 110,150 200,215 300,160 400,210 400,300'], ['#2d4a3a', '0,300 0,255 400,240 400,300']], '#fff6d0', 240, 60],
+  sunset: ['#f6a35c', '#fde3b0', [['#e0794f', '0,300 0,200 400,200 400,300'], ['#c45f45', '0,300 0,235 400,235 400,300'], ['#9e4a3c', '0,300 0,268 400,268 400,300']], '#fff2c4', 200, 190],
+  forest: ['#bfe3d0', '#eef8f1', [['#7db38f', '0,300 0,150 70,110 140,150 220,100 310,140 400,110 400,300'], ['#4f8a63', '0,300 0,200 400,175 400,300'], ['#2f5f43', '0,300 0,245 400,230 400,300']], '#fdf7d8', 80, 70],
+  lake: ['#8ec5e8', '#dff0fa', [['#6e8fb0', '0,300 0,150 120,100 230,150 330,90 400,130 400,300'], ['#3f7fae', '0,300 0,190 400,190 400,300'], ['#5b9ac4', '0,300 0,230 400,226 400,300']], '#ffffff', 300, 55],
+  dunes: ['#f3c98b', '#fbe7c6', [['#e2a861', '0,300 0,180 120,150 260,190 400,160 400,300'], ['#c98a46', '0,300 0,230 160,200 300,240 400,215 400,300']], '#fff4d6', 110, 80],
+  meadow: ['#a8d8f0', '#e8f6fd', [['#9cc97a', '0,300 0,190 140,160 280,190 400,170 400,300'], ['#6da552', '0,300 0,235 400,220 400,300']], '#fffbe0', 240, 70],
+  night: ['#1d2c58', '#3e4f86', [['#2a3a68', '0,300 0,200 90,150 180,200 290,140 400,190 400,300'], ['#16213f', '0,300 0,250 400,240 400,300']], '#f4f1d0', 290, 70],
+  beach: ['#7cc8ec', '#d9f1fb', [['#2f8fc4', '0,300 0,170 400,170 400,300'], ['#5fb3dc', '0,300 0,200 400,195 400,300'], ['#efd9a8', '0,300 0,240 140,230 400,250 400,300']], '#fffbe6', 170, 60],
+};
+
+function scene(name) {
+  const [top, bottom, layers, sun, sx, sy] = scenes[name];
+  const id = 'g' + Math.random().toString(36).slice(2);
+  const stars = name === 'night' ? [...Array(18)].map((_, i) => `<circle cx="${(i * 97) % 400}" cy="${(i * 53) % 130}" r="1.6" fill="#fff" opacity=".8"/>`).join('') : '';
+  const flowers = name === 'meadow' ? [...Array(26)].map((_, i) => `<circle cx="${(i * 61) % 400}" cy="${238 + (i * 29) % 60}" r="4" fill="${['#f7d44c', '#f48fb1', '#fff'][i % 3]}"/>`).join('') : '';
+  const trees = name === 'forest' ? [...Array(9)].map((_, i) => { const x = 20 + i * 45, h = 50 + (i * 17) % 30; return `<polygon points="${x},${255 - h} ${x - 16},255 ${x + 16},255" fill="#24503a"/>`; }).join('') : '';
+  return `<svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bottom}"/></linearGradient></defs>`
+    + `<rect width="400" height="300" fill="url(#${id})"/>${stars}<circle cx="${sx}" cy="${sy}" r="30" fill="${sun}" opacity=".95"/>`
+    + layers.map(([c, pts]) => `<polygon points="${pts}" fill="${c}"/>`).join('') + trees + flowers + '</svg>';
+}
+
+// back page: clean 2 x 3 grid with a notes area
+const back = document.getElementById('back');
+const names = ['lake', 'dunes', 'forest', 'night', 'beach', 'meadow'];
+names.forEach((n, i) => {
+  const x = 24 + (i % 2) * 190, y = 24 + Math.floor(i / 2) * 146;
+  back.insertAdjacentHTML('beforeend', `<div class="pic" style="left:${x}px;top:${y}px;width:182px;height:138px">${scene(n)}</div>`);
+});
+back.insertAdjacentHTML('beforeend', '<div class="notes">Summer 2026 - the lake house,<br>first swim of the season!</div>');
+
+// front page: polaroid 2 x 2 with a note on a photo
+const front = document.getElementById('front');
+const cells = [['mountains', 0, 0], ['sunset', 1, 0], ['meadow', 0, 1], ['beach', 1, 1]];
+for (const [n, cx, cy] of cells) {
+  const x = 24 + cx * 192, y = 24 + cy * 276, w = 180, h = 264;
+  front.insertAdjacentHTML('beforeend', `<div class="polaroid" style="left:${x}px;top:${y}px;width:${w}px;height:${h}px"></div>`
+    + `<div class="pic" style="left:${x + 10}px;top:${y + 10}px;width:${w - 20}px;height:${h - 56}px">${scene(n)}${n === 'sunset' ? '<div class="overlay">Sunset at the coast</div>' : ''}</div>`);
+}
+// crop button on one photo
+front.insertAdjacentHTML('beforeend', '<div class="crop" style="left:162px;top:42px">✥</div>');
+// insert marker between the two bottom photos, plus the photo being dragged
+front.insertAdjacentHTML('beforeend', '<div class="marker" style="left:207px;top:300px;height:264px"></div>');
+document.body.insertAdjacentHTML('beforeend', `<div class="ghost" style="left:1018px;top:690px">${scene('forest')}</div>`
+  + '<svg class="cursor" style="left:1110px;top:760px" viewBox="0 0 24 24"><path d="M4 2l15 11-7 1 4 8-3 1-4-8-5 5z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg>');
+</script>
+</body>
+</html>

@@ -13,3 +13,6 @@ export/
 photo-grid.json
 .cache/
 .DS_Store
+
+# The README graphic is the only committed image
+!docs/feature.png
