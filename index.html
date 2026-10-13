@@ -74,8 +74,9 @@
   .crop-btn { position: absolute; top: 2mm; right: 12.5mm; width: 9mm; height: 9mm; padding: 0; border-radius: 50%; font-size: 5mm; line-height: 1; background: rgba(0,0,0,.6); border: none; color: #fff; display: none; z-index: 1; }
   .slot:hover .crop-btn { display: block; }
   .imgbox.cropping { cursor: move; touch-action: none; outline: 1.2mm solid #3b82f6; outline-offset: 0.6mm; z-index: 3; }
-  .crop-bar { position: absolute; left: 50%; bottom: calc(8px / var(--zoom)); transform: translateX(-50%); display: flex; gap: calc(6px / var(--zoom)); z-index: 2; white-space: nowrap; }
-  .crop-bar button, .crop-bar span { font-size: calc(12px / var(--zoom)); padding: calc(4px / var(--zoom)) calc(10px / var(--zoom)); border-radius: calc(12px / var(--zoom)); background: rgba(0,0,0,.7); color: #fff; border: none; }
+  .crop-bar { position: absolute; transform: translate(-50%, calc(10px / var(--zoom))); display: flex; gap: calc(4px / var(--zoom)); z-index: 6; white-space: nowrap; padding: calc(4px / var(--zoom)); border-radius: calc(10px / var(--zoom)); background: #1e1f22; box-shadow: 0 calc(4px / var(--zoom)) calc(16px / var(--zoom)) rgba(0,0,0,.4); }
+  .crop-bar button { font-size: calc(13px / var(--zoom)); padding: calc(4px / var(--zoom)) calc(10px / var(--zoom)); border-radius: calc(7px / var(--zoom)); min-width: calc(30px / var(--zoom)); background: #313338; color: #fff; border: none; }
+  .crop-bar button.primary { background: #3b82f6; }
   .drop-marker { position: absolute; width: 1.6mm; margin-left: -0.8mm; border-radius: 0.8mm; background: #3b82f6; box-shadow: 0 0 0 0.6mm rgba(59,130,246,.3); pointer-events: none; z-index: 4; }
   #hidden-tray { margin-top: 40px; padding-top: 16px; border-top: 1px solid #44464d; }
   #hidden-tray .thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
@@ -187,8 +188,9 @@
         <button class="primary" id="pick-big">Choose photo folder…</button>
         <button id="pick-photos-big">Choose photos…</button>
       </div>
-      <div>Your photos stay on this computer. Nothing is uploaded.<br>Pick a folder or some photos, then drag them to rearrange.</div>
+      <div>Your photos stay on this computer.<br>Pick a folder or some photos, then drag them to rearrange.</div>
     </div>
+    <div class="info" id="firefox-note" hidden>Firefox asks whether to "upload" the folder. Nothing leaves your computer, Firefox uses that word whenever a page reads a folder. "Choose photos…" does not ask.</div>
     <div id="browser-copies"></div>
   </div>
   <div id="pages"></div>
@@ -256,7 +258,7 @@ let photos = new Map(); // name -> { file, url, w, h }
 let order = [];
 let hidden = new Set();
 let notes = { photo: {}, page: {} };
-// where each cropped photo is anchored, 0 to 1 per axis like CSS object-position
+// per cropped photo: its anchor, 0 to 1 per axis like CSS object-position, and its zoom
 let crops = {};
 let cropping = null;
 // every project is its own arrangement of the same folder; the open one lives in order, hidden, notes and settings
@@ -817,6 +819,21 @@ function slotGeometry(slot, photo) {
   return { look, frame, box, caption, note, overlay, font, radius: look.radius ? Math.min(4, short * look.radius) : 0 };
 }
 
+// the photo's place inside its frame for a crop anchor (0 to 1 per axis) and zoom (1 just fills the frame)
+function cropRect(boxW, boxH, photo, crop = {}) {
+  const scale = Math.max(boxW / photo.w, boxH / photo.h) * (crop.zoom || 1);
+  const w = photo.w * scale, h = photo.h * scale;
+  return { x: (boxW - w) * (crop.x ?? 0.5), y: (boxH - h) * (crop.y ?? 0.5), w, h };
+}
+
+function cropCss(boxW, boxH, photo, crop) {
+  const r = cropRect(boxW, boxH, photo, crop);
+  const pct = (v, of) => `${(v / of * 100).toFixed(3)}%`;
+  return `position:absolute;max-width:none;left:${pct(r.x, boxW)};top:${pct(r.y, boxH)};width:${pct(r.w, boxW)};height:${pct(r.h, boxH)};`;
+}
+
+const MAX_ZOOM = 5;
+
 function fitRect(box, iw, ih, mode) {
   const s = mode === 'cover' ? Math.max(box.w / iw, box.h / ih) : Math.min(box.w / iw, box.h / ih);
   const w = iw * s, h = ih * s;
@@ -854,18 +871,20 @@ function slotHtml(slot, name, withText) {
     html += `<div class="imgbox placeholder" draggable="true" style="${place(g.box)}">${text}`;
   } else {
     const isCropping = cropping === name;
-    const crop = crops[name];
-    const position = crop ? `object-position:${(crop.x * 100).toFixed(2)}% ${(crop.y * 100).toFixed(2)}%;` : '';
+    const position = settings.fit === 'cover' ? cropCss(g.box.w, g.box.h, photo, crops[name]) : '';
     html += `<div class="imgbox${isCropping ? ' cropping' : ''}" draggable="${!isCropping}" style="${place(g.box)}border-radius:${mm(g.radius)};${g.look.shadow && !g.look.frame ? shadowCss : ''}">`;
     html += `<img src="${photo.url}" data-name="${escapeHtml(name)}" draggable="false" decoding="async" loading="lazy" style="${position}">`;
-    if (isCropping) {
-      html += '<div class="crop-bar"><span>Drag to move the photo</span><button data-crop-reset>Reset</button><button data-crop-done>Done</button></div>';
-    } else if (settings.fit === 'cover') {
-      html += `<button class="crop-btn" data-crop="${escapeHtml(name)}" title="Move the photo inside its frame">✥</button>`;
+    if (!isCropping && settings.fit === 'cover') {
+      html += `<button class="crop-btn" data-crop="${escapeHtml(name)}" title="Move and zoom the photo inside its frame">✥</button>`;
     }
   }
   if (cropping !== name) html += `<button class="hide-btn" data-hide="${escapeHtml(name)}" title="Hide this photo">×</button>`;
   html += '</div>';
+  if (photo.url && cropping === name) {
+    html += `<div class="crop-bar" style="left:${mm(g.box.x + g.box.w / 2)};top:${mm(g.box.y + g.box.h)}" title="Drag the photo to move it, scroll to zoom">`
+      + '<button data-crop-zoom="out" title="Zoom out">−</button><button data-crop-zoom="in" title="Zoom in">+</button>'
+      + '<button data-crop-reset>Reset</button><button class="primary" data-crop-done>Done</button></div>';
+  }
   if (g.caption) {
     html += `<div class="caption" style="${place(g.caption)}font-size:${mm(g.font)};line-height:${mm(g.caption.h)};color:${textColor(!!g.look.frame)}">${escapeHtml(captionText(name))}</div>`;
   }
@@ -876,11 +895,18 @@ function slotHtml(slot, name, withText) {
 
 function overlayNoteHtml(g, text, name) {
   const o = g.overlay;
-  return `<div class="note overlay" contenteditable="plaintext-only" data-note-photo="${escapeHtml(name)}" data-placeholder="Note…" `
+  return `<div class="note overlay" contenteditable="${EDITABLE}" data-note-photo="${escapeHtml(name)}" data-placeholder="Note…" `
     + `style="left:${mm(o.x)};width:${mm(o.w)};bottom:${mm(o.bottom)};max-height:${mm(o.maxH)};`
     + `padding:${mm(OVERLAY_PAD.top)} ${mm(OVERLAY_PAD.side)} ${mm(OVERLAY_PAD.bottom)};border-radius:0 0 ${mm(g.radius)} ${mm(g.radius)};`
     + `font-size:${mm(NOTE_FONT)};line-height:${mm(OVERLAY_LINE)}">${escapeHtml(text || '')}</div>`;
 }
+
+// Firefox before version 136 does not know plain-text-only editing
+const EDITABLE = (() => {
+  const el = document.createElement('div');
+  el.contentEditable = 'plaintext-only';
+  return el.contentEditable === 'plaintext-only' ? 'plaintext-only' : 'true';
+})();
 
 // lines stay at least one screen pixel thick when zoomed out
 const LINE_CSS = 'max(0.25mm, 1px / var(--zoom))';
@@ -899,7 +925,7 @@ function notePatternCss() {
 
 function noteHtml(rect, text, kind, id, placeholder, onFrame) {
   const lines = notePatternCss();
-  return `<div class="note" contenteditable="plaintext-only" data-note-${kind}="${escapeHtml(id)}" data-placeholder="${placeholder}" `
+  return `<div class="note" contenteditable="${EDITABLE}" data-note-${kind}="${escapeHtml(id)}" data-placeholder="${placeholder}" `
     + `style="${place(rect)}font-size:${mm(NOTE_FONT)};line-height:${mm(NOTE_LINE)};color:${textColor(onFrame)};${lines}">${escapeHtml(text || '')}</div>`;
 }
 
@@ -1178,36 +1204,58 @@ pagesEl.addEventListener('dblclick', e => {
   if (slot && settings.fit === 'cover' && cropping !== slot.dataset.name) startCrop(slot.dataset.name);
 });
 
+// the image style is changed directly while dragging or zooming, so its cached element must be rebuilt afterwards
+function cropChanged(name) {
+  slotNodes.delete(name);
+  save();
+}
+
+function showCrop(box, name) {
+  const bounds = box.getBoundingClientRect();
+  box.querySelector('img').style.cssText = cropCss(bounds.width, bounds.height, photos.get(name), crops[name]);
+}
+
+function setZoom(name, zoom) {
+  crops[name] = { x: 0.5, y: 0.5, ...crops[name], zoom: Math.min(MAX_ZOOM, Math.max(1, zoom)) };
+}
+
 pagesEl.addEventListener('pointerdown', e => {
   const box = e.target.closest('.imgbox.cropping');
   if (!box || e.target.closest('button')) return;
   e.preventDefault();
   const name = cropping;
-  const photo = photos.get(name);
-  const img = box.querySelector('img');
   const bounds = box.getBoundingClientRect();
-  const scale = Math.max(bounds.width / photo.w, bounds.height / photo.h);
-  const spareX = photo.w * scale - bounds.width, spareY = photo.h * scale - bounds.height;
-  const start = { x: e.clientX, y: e.clientY, crop: { x: 0.5, y: 0.5, ...crops[name] } };
+  const start = { x: e.clientX, y: e.clientY, crop: { x: 0.5, y: 0.5, zoom: 1, ...crops[name] } };
+  const r = cropRect(bounds.width, bounds.height, photos.get(name), start.crop);
+  const spareX = r.w - bounds.width, spareY = r.h - bounds.height;
   const clamp = v => Math.min(1, Math.max(0, v));
   box.setPointerCapture(e.pointerId);
   const move = ev => {
-    const crop = {
+    crops[name] = {
+      ...start.crop,
       x: spareX > 1 ? clamp(start.crop.x - (ev.clientX - start.x) / spareX) : 0.5,
       y: spareY > 1 ? clamp(start.crop.y - (ev.clientY - start.y) / spareY) : 0.5,
     };
-    crops[name] = crop;
-    img.style.objectPosition = `${crop.x * 100}% ${crop.y * 100}%`;
+    showCrop(box, name);
   };
   box.addEventListener('pointermove', move);
   box.addEventListener('pointerup', () => {
     box.removeEventListener('pointermove', move);
-    save();
+    cropChanged(name);
   }, { once: true });
 });
 
+pagesEl.addEventListener('wheel', e => {
+  const box = e.target.closest('.imgbox.cropping');
+  if (!box) return;
+  e.preventDefault();
+  setZoom(cropping, (crops[cropping]?.zoom || 1) * Math.exp(-e.deltaY * 0.002));
+  showCrop(box, cropping);
+  cropChanged(cropping);
+}, { passive: false });
+
 document.addEventListener('click', e => {
-  if (cropping && !e.target.closest('.imgbox.cropping, [data-crop]')) endCrop();
+  if (cropping && !e.target.closest('.imgbox.cropping, .crop-bar, [data-crop]')) endCrop();
 });
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') endCrop();
@@ -1230,7 +1278,12 @@ pagesEl.addEventListener('click', e => {
   if (e.target.dataset.cropDone !== undefined) return endCrop();
   if (e.target.dataset.cropReset !== undefined) {
     delete crops[cropping];
-    save();
+    cropChanged(cropping);
+    return render();
+  }
+  if (e.target.dataset.cropZoom) {
+    setZoom(cropping, (crops[cropping]?.zoom || 1) * (e.target.dataset.cropZoom === 'in' ? 1.25 : 0.8));
+    cropChanged(cropping);
     return render();
   }
   if (!hide) return;
@@ -1529,11 +1582,8 @@ function drawPage(ctx, scale, names, layout, pageNumber) {
     ctx.beginPath();
     ctx.roundRect(r.x, r.y, r.w, r.h, radius);
     ctx.clip();
-    const d = fitRect(r, bitmap.width, bitmap.height, 'cover');
-    const crop = crops[name] || { x: 0.5, y: 0.5 };
-    d.x = r.x + (r.w - d.w) * crop.x;
-    d.y = r.y + (r.h - d.h) * crop.y;
-    ctx.drawImage(bitmap, d.x, d.y, d.w, d.h);
+    const d = cropRect(r.w, r.h, { w: bitmap.width, h: bitmap.height }, settings.fit === 'cover' ? crops[name] : undefined);
+    ctx.drawImage(bitmap, r.x + d.x, r.y + d.y, d.w, d.h);
     ctx.restore();
     bitmap.close();
 
@@ -1764,10 +1814,19 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
 for (const key of Object.keys(localStorage)) if (key.startsWith('photogrid:')) localStorage.removeItem(key);
 
-dbGet('autosave').then(value => { autosave = value !== false; });
-syncControls();
-render();
-showRecentFolders();
+$('firefox-note').hidden = !/firefox/i.test(navigator.userAgent);
+
+async function start() {
+  autosave = (await dbGet('autosave')) !== false;
+  syncControls();
+  render();
+  showRecentFolders();
+  const [last] = await recentFolders();
+  if (last && await last.handle.queryPermission({ mode: 'readwrite' }) === 'granted') {
+    try { await openFolder(last.handle); } catch {}
+  }
+}
+start();
 </script>
 </body>
 </html>
