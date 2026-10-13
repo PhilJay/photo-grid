@@ -29,3 +29,5 @@ Then open http://localhost:8000.
 Published with GitHub Pages from `main` at https://philjay.github.io/photo-grid/. After the first visit the app also works offline.
 
 The README graphics use drawn dummy pictures, no real photos. `docs/feature.html` renders the first one.
+
+See the [privacy notice](privacy.html) for what is stored where. Imprint: [philjay.cc/imprint](https://philjay.cc/imprint).

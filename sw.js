@@ -1,6 +1,6 @@
 // Keeps the app working offline. Photos are never cached, only the app files.
-const CACHE = 'photo-grid-v3';
-const APP_FILES = ['./', './index.html', './heic-worker.js', './vendor/libheif.js', './vendor/libheif.wasm', './manifest.webmanifest', './icon.svg', './assets/hero.jpg'];
+const CACHE = 'photo-grid-v4';
+const APP_FILES = ['./', './index.html', './heic-worker.js', './vendor/libheif.js', './vendor/libheif.wasm', './manifest.webmanifest', './icon.svg', './assets/hero.jpg', './assets/hero-552.webp', './assets/hero-920.webp', './privacy.html'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(APP_FILES)));
