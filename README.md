@@ -8,7 +8,7 @@ Open the page, click "Choose photo folder…" and pick a folder with photos. Dra
 
 Everything is saved in `photo-grid.json` inside the photo folder, and exports go into `export/<project>/` there. The browser only remembers which folder was opened last. Chrome and Edge write these files directly; in Safari and Firefox you download `photo-grid.json` and put it into the folder yourself, and exports are downloaded.
 
-HEIC photos are converted in the browser with [libheif](https://github.com/strukturag/libheif) (`vendor/`, LGPL).
+HEIC photos that the browser cannot show itself are converted in the browser with libheif. See `vendor/README.md` for its license (LGPL-3.0).
 
 ## Run locally
 
