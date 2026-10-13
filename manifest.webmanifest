@@ -1,0 +1,10 @@
+{
+  "name": "Photo Grid",
+  "short_name": "Photo Grid",
+  "description": "Arrange photos from a folder into printable A4 pages. Works offline, photos stay on your computer.",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#2b2d31",
+  "theme_color": "#1e1f22",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

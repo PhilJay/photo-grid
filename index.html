@@ -1,0 +1,1059 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Photo Grid</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<style id="page-size">@page { size: A4 portrait; margin: 0; }</style>
+<style>
+  :root { --zoom: 0.5; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font: 14px/1.4 system-ui, -apple-system, sans-serif; background: #2b2d31; color: #e8e8ea; display: flex; height: 100vh; }
+  aside { width: 270px; flex: none; background: #1e1f22; padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+  aside h1 { font-size: 18px; margin: 0; }
+  aside .info { color: #9a9ca3; font-size: 12px; }
+  label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #b5b7bd; }
+  label.row { flex-direction: row; align-items: center; gap: 8px; }
+  select, input[type=range] { width: 100%; }
+  select, button { font: inherit; background: #313338; color: #e8e8ea; border: 1px solid #44464d; border-radius: 6px; padding: 6px 8px; }
+  button { cursor: pointer; }
+  button:hover { background: #3a3c42; }
+  button.primary { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+  button.primary:hover { background: #2f6fda; }
+  button:disabled { opacity: .5; cursor: default; }
+  .group { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid #313338; }
+  .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  main { flex: 1; overflow: auto; padding: 32px; }
+  #empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; color: #9a9ca3; }
+  #empty button { font-size: 16px; padding: 12px 20px; }
+  #pages { display: flex; flex-wrap: wrap; gap: 36px; justify-content: center; align-items: flex-start; }
+  .sheet { display: flex; flex-direction: column; gap: 6px; }
+  .sheet .label { font-size: 12px; color: #9a9ca3; }
+  .page { position: relative; width: 210mm; height: 297mm; zoom: var(--zoom); box-shadow: 0 4px 24px rgba(0,0,0,.5); }
+  .page.landscape { width: 297mm; height: 210mm; }
+  .slot { position: absolute; }
+  .slot.empty { outline: 0.8mm dashed rgba(128,128,128,.4); outline-offset: -0.8mm; }
+  .imgbox[draggable=true] { cursor: grab; }
+  .slot.dragging { opacity: .35; }
+  .slot.over { outline: 1.5mm solid #3b82f6; outline-offset: 0.5mm; z-index: 2; }
+  .frame, .imgbox, .caption, .note { position: absolute; }
+  .imgbox { overflow: hidden; }
+  .imgbox.placeholder { background: rgba(128,128,128,.15); color: #888; font-size: 4mm; display: flex; align-items: center; justify-content: center; }
+  .imgbox img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .caption { text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .note { white-space: pre-wrap; overflow: hidden; overflow-wrap: anywhere; outline: none; cursor: text; }
+  .note:hover { background-color: rgba(59,130,246,.07); }
+  .note:focus { box-shadow: 0 0 0 0.5mm #3b82f6; }
+  .note:empty::before { content: attr(data-placeholder); color: rgba(128,128,128,.7); }
+  .hide-btn { position: absolute; top: 2mm; right: 2mm; width: 9mm; height: 9mm; padding: 0; border-radius: 50%; font-size: 6mm; line-height: 1; background: rgba(0,0,0,.6); border: none; color: #fff; display: none; z-index: 1; }
+  .slot:hover .hide-btn { display: block; }
+  #hidden-tray { margin-top: 40px; padding-top: 16px; border-top: 1px solid #44464d; }
+  #hidden-tray .thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  #hidden-tray img { width: 80px; height: 80px; object-fit: cover; border-radius: 4px; cursor: pointer; opacity: .6; }
+  #hidden-tray img:hover { opacity: 1; }
+
+  @media print {
+    :root { --zoom: 1 !important; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    body { display: block; height: auto; background: none; }
+    aside, .sheet .label, #hidden-tray, .hide-btn { display: none !important; }
+    main { padding: 0; overflow: visible; }
+    #pages { display: block; }
+    .sheet { display: block; }
+    .page { zoom: 1; box-shadow: none; break-after: page; }
+    .sheet:last-child .page { break-after: auto; }
+    .slot.empty { outline: none; }
+    .note:empty::before { content: none; }
+    .note:hover, .note:focus { background-color: transparent; box-shadow: none; }
+  }
+</style>
+</head>
+<body>
+<aside>
+  <h1>Photo Grid</h1>
+  <button id="pick">Choose photo folder…</button>
+  <button id="reopen" hidden></button>
+  <div class="info" id="info">No folder loaded.</div>
+  <div class="info" id="save-info" hidden></div>
+  <input type="file" id="file-input" webkitdirectory multiple hidden>
+
+  <div class="group">
+    <label>Layout <select id="layout"></select></label>
+    <label>Style <select id="look"></select></label>
+    <label>Photo fit
+      <select id="fit"><option value="contain">Whole photo (no cropping)</option><option value="cover">Fill the space (crops)</option></select>
+    </label>
+    <label>Orientation
+      <select id="orientation"><option value="portrait">A4 portrait</option><option value="landscape">A4 landscape</option></select>
+    </label>
+    <label><span>Page margin: <span id="margin-val"></span></span><input type="range" id="margin" min="0" max="30" step="1"></label>
+    <label><span>Gap: <span id="gap-val"></span></span><input type="range" id="gap" min="0" max="20" step="1"></label>
+    <label class="row">Page color <input type="color" id="bg"></label>
+    <label class="row"><input type="checkbox" id="captions"> Show file names</label>
+  </div>
+
+  <div class="group">
+    <label>Notes area on each page
+      <select id="pageNotes"><option value="none">None</option><option value="bottom">Bottom</option><option value="top">Top</option><option value="left">Left</option><option value="right">Right</option></select>
+    </label>
+    <label><span>Notes area size: <span id="pageNoteSize-val"></span></span><input type="range" id="pageNoteSize" min="10" max="150" step="5"></label>
+    <label><span>Note space under each photo: <span id="photoNoteSize-val"></span></span><input type="range" id="photoNoteSize" min="0" max="40" step="1"></label>
+    <label>Notes background
+      <select id="noteLines"><option value="none">Blank</option><option value="lines">Lines</option><option value="dots">Dots</option><option value="grid">Squares</option></select>
+    </label>
+    <div class="info">Click a notes area to type into it, or leave it empty and write on the printout.</div>
+  </div>
+
+  <div class="group">
+    <label>Dragging a photo onto another
+      <select id="dragMode"><option value="move">moves it there</option><option value="swap">swaps the two</option></select>
+    </label>
+    <div class="buttons">
+      <button id="sort-name">Sort by name</button>
+      <button id="sort-date">Sort by date</button>
+    </div>
+  </div>
+
+  <div class="group">
+    <label>Zoom <input type="range" id="zoom" min="0.2" max="1.2" step="0.05"></label>
+  </div>
+
+  <div class="group">
+    <button class="primary" id="export-jpg">Export pages</button>
+    <button id="print">Print / Save as PDF</button>
+    <div class="info" id="export-info">Saves one A4 JPG per page at 300 dpi plus a zip of all pages into an <b>export</b> folder inside your photo folder. For PDF choose "Save as PDF" in the print dialog.</div>
+  </div>
+</aside>
+
+<main>
+  <div id="empty">
+    <button class="primary" id="pick-big">Choose photo folder…</button>
+    <div>Your photos stay on this computer. Nothing is uploaded.<br>Pick a folder, then drag photos to rearrange them.</div>
+  </div>
+  <div id="pages"></div>
+  <div id="hidden-tray" hidden>
+    <div class="info">Hidden photos - click one to put it back</div>
+    <div class="thumbs"></div>
+  </div>
+</main>
+
+<script>
+const IMAGE_FILE = /\.(jpe?g|png|webp|gif|avif|bmp|heic|heif)$/i;
+const EXPORT_DPI = 300;
+
+function spans(cols, rows, cells) {
+  return (W, H, g) => {
+    const cw = (W - g * (cols - 1)) / cols, ch = (H - g * (rows - 1)) / rows;
+    return cells.map(([x, y, w, h]) => ({ x: x * (cw + g), y: y * (ch + g), w: w * cw + (w - 1) * g, h: h * ch + (h - 1) * g }));
+  };
+}
+function grid(cols, rows) {
+  const cells = [];
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) cells.push([x, y, 1, 1]);
+  return spans(cols, rows, cells);
+}
+
+const LAYOUTS = {
+  g1x1: { name: '1 per page', slots: grid(1, 1) },
+  g1x2: { name: '2 stacked', slots: grid(1, 2) },
+  g2x2: { name: 'Grid 2 × 2', slots: grid(2, 2) },
+  g2x3: { name: 'Grid 2 × 3', slots: grid(2, 3) },
+  g3x3: { name: 'Grid 3 × 3', slots: grid(3, 3) },
+  g3x4: { name: 'Grid 3 × 4', slots: grid(3, 4) },
+  g4x5: { name: 'Contact sheet 4 × 5', slots: grid(4, 5) },
+  hero: { name: 'Hero + 2', slots: spans(2, 3, [[0, 0, 2, 2], [0, 2, 1, 1], [1, 2, 1, 1]]) },
+  heroBottom: { name: '3 + big bottom', slots: spans(3, 3, [[0, 0, 1, 1], [1, 0, 1, 1], [2, 0, 1, 1], [0, 1, 3, 2]]) },
+  sidebar: { name: 'Big left + 3', slots: spans(3, 3, [[0, 0, 2, 3], [2, 0, 1, 1], [2, 1, 1, 1], [2, 2, 1, 1]]) },
+  staggered: { name: 'Staggered (5)', slots: spans(2, 4, [[0, 0, 1, 2], [1, 0, 1, 1], [1, 1, 1, 2], [0, 2, 1, 2], [1, 3, 1, 1]]) },
+  mosaic: { name: 'Mosaic (9)', slots: spans(3, 4, [[0, 0, 2, 2], [2, 0, 1, 1], [2, 1, 1, 1], [0, 2, 1, 1], [1, 2, 1, 1], [2, 2, 1, 1], [0, 3, 1, 1], [1, 3, 1, 1], [2, 3, 1, 1]]) },
+};
+
+// pad and bottom are fractions of the slot's shorter side
+const LOOKS = {
+  clean: { name: 'Clean' },
+  rounded: { name: 'Rounded with shadow', radius: 0.035, shadow: true },
+  framed: { name: 'White mat', pad: 0.045, frame: '#ffffff', border: true },
+  polaroid: { name: 'Polaroid', pad: 0.05, bottom: 0.2, frame: '#ffffff', shadow: true },
+};
+
+const SHADOW = { y: 0.6, blur: 2.5, color: 'rgba(0,0,0,0.28)' };
+
+const NOTE_FONT = 3.2;
+const NOTE_LINE = 6.5;
+const RULE_COLOR = 'rgba(128,128,128,0.5)';
+const FONT = 'system-ui, -apple-system, sans-serif';
+
+const DEFAULT_SETTINGS = {
+  layout: 'g2x3', look: 'clean', fit: 'contain', orientation: 'portrait', margin: 10, gap: 4, bg: '#ffffff', captions: false,
+  pageNotes: 'none', pageNoteSize: 40, photoNoteSize: 0, noteLines: 'lines', dragMode: 'move', zoom: 0.5,
+};
+
+let folderName = null;
+let photos = new Map(); // name -> { file, url, w, h }
+let order = [];
+let hidden = new Set();
+let notes = { photo: {}, page: {} };
+let settings = { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem('photogrid:settings') || '{}') };
+let dragFrom = null;
+
+const $ = id => document.getElementById(id);
+
+// ---------- saving ----------
+
+const STATE_FILE = 'photo-grid.json';
+let folderHandle = null; // only set when the folder can be written to
+
+function stateKey() { return 'photogrid:folder:' + folderName; }
+
+function currentState() {
+  return { version: 1, order, hidden: [...hidden], notes, settings };
+}
+
+let writeTimer = null;
+function save() {
+  localStorage.setItem('photogrid:settings', JSON.stringify(settings));
+  if (!folderName) return;
+  localStorage.setItem(stateKey(), JSON.stringify(currentState()));
+  if (folderHandle) {
+    clearTimeout(writeTimer);
+    writeTimer = setTimeout(writeStateFile, 500);
+  }
+}
+
+async function writeFile(dir, name, data) {
+  const writable = await (await dir.getFileHandle(name, { create: true })).createWritable();
+  await writable.write(data);
+  await writable.close();
+}
+
+async function writeStateFile() {
+  try {
+    await writeFile(folderHandle, STATE_FILE, JSON.stringify(currentState(), null, 2));
+  } catch (e) {
+    console.warn(`Could not save ${STATE_FILE}`, e);
+  }
+}
+
+async function readStateFile(handle) {
+  try {
+    return JSON.parse(await (await (await handle.getFileHandle(STATE_FILE)).getFile()).text());
+  } catch {
+    return null;
+  }
+}
+
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open('photogrid', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('kv');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+async function dbGet(key) {
+  try {
+    const db = await openDb();
+    return await new Promise(resolve => {
+      const req = db.transaction('kv').objectStore('kv').get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(undefined);
+    });
+  } catch { return undefined; }
+}
+async function dbSet(key, value) {
+  try {
+    const db = await openDb();
+    await new Promise(resolve => {
+      const tx = db.transaction('kv', 'readwrite');
+      tx.objectStore('kv').put(value, key);
+      tx.oncomplete = tx.onerror = resolve;
+    });
+  } catch {}
+}
+
+// ---------- showing photos ----------
+
+const PREVIEW_SIZE = 1600;
+
+function limitParallel(max) {
+  let running = 0;
+  const waiting = [];
+  const next = () => {
+    if (running >= max || !waiting.length) return;
+    running++;
+    const { task, resolve, reject } = waiting.shift();
+    task().then(resolve, reject).finally(() => { running--; next(); });
+  };
+  return task => new Promise((resolve, reject) => { waiting.push({ task, resolve, reject }); next(); });
+}
+
+const heicWorkers = [];
+const convertJobs = [];
+const MAX_WORKERS = 2;
+
+function convertHeic(file, maxSize) {
+  return new Promise((resolve, reject) => {
+    convertJobs.push({ file, maxSize, resolve, reject });
+    startConvertJobs();
+  });
+}
+
+function startConvertJobs() {
+  while (convertJobs.length) {
+    let worker = heicWorkers.find(w => !w.busy);
+    if (!worker && heicWorkers.length < MAX_WORKERS) {
+      worker = new Worker('heic-worker.js');
+      heicWorkers.push(worker);
+    }
+    if (!worker) return;
+    const job = convertJobs.shift();
+    worker.busy = true;
+    const done = (error, blob) => {
+      worker.busy = false;
+      error ? job.reject(new Error(error)) : job.resolve(blob);
+      startConvertJobs();
+    };
+    worker.onmessage = ({ data }) => done(data.error, data.blob);
+    worker.onerror = e => { e.preventDefault(); done(e.message || 'HEIC converter failed to start'); };
+    job.file.arrayBuffer().then(buffer => worker.postMessage({ buffer, maxSize: job.maxSize }, [buffer]), e => done(e.message));
+  }
+}
+
+function browserCanShow(url) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth ? { w: img.naturalWidth, h: img.naturalHeight } : null);
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
+}
+
+const previewLimit = limitParallel(4);
+
+// phones often save JPEGs with a .heic name, so the first bytes decide
+async function isRealHeic(file) {
+  const head = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  const box = String.fromCharCode(...head.slice(4, 8));
+  const brand = String.fromCharCode(...head.slice(8, 12));
+  return box === 'ftyp' && /^(heic|heix|hevc|hevx|heim|heis|mif1|msf1)$/.test(brand);
+}
+
+async function withRealType(file) {
+  const head = new Uint8Array(await file.slice(0, 3).arrayBuffer());
+  const isJpeg = head[0] === 0xFF && head[1] === 0xD8 && head[2] === 0xFF;
+  return isJpeg && file.type !== 'image/jpeg' ? file.slice(0, file.size, 'image/jpeg') : file;
+}
+
+// the browser gets the first try, Safari can show HEIC itself
+function loadPreview(photo) {
+  if (photo.url || photo.loading || photo.failed) return;
+  photo.loading = true;
+  (async () => {
+    photo.blob = await withRealType(photo.file);
+    let url = URL.createObjectURL(photo.blob);
+    let size = await previewLimit(() => browserCanShow(url));
+    if (!size && await isRealHeic(photo.file)) {
+      URL.revokeObjectURL(url);
+      url = URL.createObjectURL(await convertHeic(photo.file, PREVIEW_SIZE));
+      size = await previewLimit(() => browserCanShow(url));
+      photo.converted = true;
+    }
+    if (!size) throw new Error('Unsupported image');
+    Object.assign(photo, { url, w: size.w, h: size.h });
+  })().catch(() => { photo.failed = true; }).finally(() => {
+    photo.loading = false;
+    scheduleRender();
+  });
+}
+
+async function fullImage(photo) {
+  const blob = photo.converted ? await convertHeic(photo.file, Infinity) : photo.blob || photo.file;
+  return createImageBitmap(blob);
+}
+
+// ---------- loading ----------
+
+const byName = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+
+function closeFolder() {
+  for (const p of photos.values()) if (p.url) URL.revokeObjectURL(p.url);
+  photos = new Map();
+  folderName = null;
+  folderHandle = null;
+  listSource = null;
+}
+
+// entries: [{ name, key, file }]; key changes when the file content changes
+function applyList(name, entries, savedState) {
+  const newFolder = name !== folderName;
+  let changed = newFolder;
+  const next = new Map();
+  for (const e of entries) {
+    const old = !newFolder && photos.get(e.name);
+    if (old && old.key === e.key) next.set(e.name, old);
+    else {
+      next.set(e.name, { ...e });
+      changed = true;
+    }
+  }
+  for (const [n, p] of photos) if (p.url && next.get(n) !== p) URL.revokeObjectURL(p.url);
+
+  let baseOrder = order, baseHidden = hidden;
+  if (newFolder) {
+    folderName = name;
+    const saved = savedState || JSON.parse(localStorage.getItem(stateKey()) || 'null');
+    baseOrder = saved ? saved.order : [];
+    baseHidden = new Set(saved ? saved.hidden : []);
+    if (saved) settings = { ...DEFAULT_SETTINGS, ...saved.settings };
+    notes = { photo: {}, page: {}, ...saved?.notes };
+  }
+  const known = baseOrder.filter(n => next.has(n));
+  const knownSet = new Set(known);
+  const added = [...next.keys()].filter(n => !knownSet.has(n)).sort(byName);
+  const nextOrder = [...known, ...added];
+  if (nextOrder.join('\n') !== order.join('\n')) changed = true;
+
+  photos = next;
+  order = nextOrder;
+  hidden = new Set([...baseHidden].filter(n => next.has(n)));
+  if (!changed) return;
+  save();
+  if (newFolder) syncControls();
+  render();
+}
+
+let listSource = null;
+let busy = false;
+
+async function refresh() {
+  if (!listSource || busy || dragFrom !== null || document.activeElement?.classList.contains('note')) return;
+  busy = true;
+  try { applyList(folderName, await listSource()); } catch {}
+  busy = false;
+}
+setInterval(refresh, 3000);
+window.addEventListener('focus', refresh);
+
+const fileEntry = f => ({ name: f.name, key: `${f.lastModified}|${f.size}`, file: f });
+
+function listHandle(handle) {
+  return async () => {
+    const entries = [];
+    for await (const entry of handle.values()) {
+      if (entry.kind === 'file' && IMAGE_FILE.test(entry.name)) entries.push(fileEntry(await entry.getFile()));
+    }
+    return entries;
+  };
+}
+
+async function openFolder(handle) {
+  const list = listHandle(handle);
+  const entries = await list();
+  const savedState = await readStateFile(handle);
+  closeFolder();
+  folderHandle = await handle.queryPermission({ mode: 'readwrite' }) === 'granted' ? handle : null;
+  listSource = list;
+  $('reopen').hidden = true;
+  applyList(handle.name, entries, savedState);
+}
+
+async function pickFolder() {
+  if (!window.showDirectoryPicker) return $('file-input').click();
+  try {
+    const handle = await showDirectoryPicker({ id: 'photogrid', mode: 'readwrite' });
+    await dbSet('folder', handle);
+    await openFolder(handle);
+  } catch (e) {
+    if (e.name !== 'AbortError') alert(e.message);
+  }
+}
+
+$('file-input').addEventListener('change', e => {
+  const all = [...e.target.files];
+  if (!all.length) return;
+  const name = all[0].webkitRelativePath.split('/')[0];
+  const files = all.filter(f => IMAGE_FILE.test(f.name) && f.webkitRelativePath.split('/').length === 2);
+  closeFolder();
+  applyList(name, files.map(fileEntry));
+});
+
+async function offerReopen() {
+  const handle = await dbGet('folder');
+  if (!handle?.queryPermission) return;
+  if (await handle.queryPermission({ mode: 'readwrite' }) === 'granted') return openFolder(handle);
+  const btn = $('reopen');
+  btn.textContent = `Open "${handle.name}" again`;
+  btn.hidden = false;
+  btn.onclick = async () => {
+    if (await handle.requestPermission({ mode: 'readwrite' }) === 'granted') openFolder(handle);
+  };
+}
+
+// ---------- geometry ----------
+
+function pageSize() {
+  return settings.orientation === 'landscape' ? { W: 297, H: 210 } : { W: 210, H: 297 };
+}
+
+function pageLayout() {
+  const { W, H } = pageSize();
+  const m = settings.margin;
+  const area = { x: m, y: m, w: W - 2 * m, h: H - 2 * m };
+  let note = null;
+  const side = settings.pageNotes;
+  if (side !== 'none') {
+    const space = Math.max(settings.gap, 4);
+    const horizontal = side === 'left' || side === 'right';
+    const size = Math.min(settings.pageNoteSize, (horizontal ? area.w : area.h) - 30);
+    if (side === 'bottom') note = { x: area.x, y: area.y + area.h - size, w: area.w, h: size };
+    if (side === 'top') { note = { x: area.x, y: area.y, w: area.w, h: size }; area.y += size + space; }
+    if (side === 'left') { note = { x: area.x, y: area.y, w: size, h: area.h }; area.x += size + space; }
+    if (side === 'right') note = { x: area.x + area.w - size, y: area.y, w: size, h: area.h };
+    if (horizontal) area.w -= size + space;
+    else area.h -= size + space;
+  }
+  const slots = LAYOUTS[settings.layout].slots(area.w, area.h, settings.gap).map(s => ({ ...s, x: s.x + area.x, y: s.y + area.y }));
+  return { slots, note };
+}
+
+// rects relative to the slot, in mm. With "whole photo" the frame shrinks around the photo instead of cropping it.
+function slotGeometry(slot, photo) {
+  const look = LOOKS[settings.look];
+  const short = Math.min(slot.w, slot.h);
+  const font = Math.min(5, Math.max(2.2, short * 0.055));
+  const p = look.pad ? short * look.pad : 0;
+  const bottom = look.bottom ? short * look.bottom : p;
+  const captionH = settings.captions && !look.bottom ? font * 2 : 0;
+  const free = slot.h - p - bottom - captionH;
+  const noteH = settings.photoNoteSize ? Math.min(settings.photoNoteSize, free * 0.6) : 0;
+  let box = { x: 0, y: 0, w: slot.w - 2 * p, h: free - noteH };
+  if (settings.fit === 'contain' && photo?.w) box = fitRect(box, photo.w, photo.h, 'contain');
+  const frameW = box.w + 2 * p, frameH = box.h + p + bottom + captionH + noteH;
+  const frame = { x: (slot.w - frameW) / 2, y: (slot.h - frameH) / 2, w: frameW, h: frameH };
+  box = { x: frame.x + p, y: frame.y + p, w: box.w, h: box.h };
+  let caption = null;
+  if (settings.captions) {
+    caption = look.bottom
+      ? { x: box.x, y: frame.y + frame.h - bottom, w: box.w, h: bottom }
+      : { x: box.x, y: box.y + box.h, w: box.w, h: captionH };
+  }
+  const note = noteH ? { x: box.x, y: box.y + box.h + captionH, w: box.w, h: noteH } : null;
+  return { look, frame, box, caption, note, font, radius: look.radius ? Math.min(4, short * look.radius) : 0 };
+}
+
+function fitRect(box, iw, ih, mode) {
+  const s = mode === 'cover' ? Math.max(box.w / iw, box.h / ih) : Math.min(box.w / iw, box.h / ih);
+  const w = iw * s, h = ih * s;
+  return { x: box.x + (box.w - w) / 2, y: box.y + (box.h - h) / 2, w, h };
+}
+
+function textColor(onFrame) {
+  if (onFrame) return '#444';
+  const n = parseInt(settings.bg.slice(1), 16);
+  const lum = 0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+  return lum > 140 ? '#444' : '#ddd';
+}
+
+const captionText = name => name.replace(/\.[^.]+$/, '');
+
+// ---------- rendering ----------
+
+function visible() { return order.filter(n => !hidden.has(n)); }
+
+const mm = v => v.toFixed(2) + 'mm';
+const place = r => `left:${mm(r.x)};top:${mm(r.y)};width:${mm(r.w)};height:${mm(r.h)};`;
+const shadowCss = `box-shadow:0 ${SHADOW.y}mm ${SHADOW.blur}mm ${SHADOW.color};`;
+
+function slotHtml(slot, index, name) {
+  if (!name) return `<div class="slot empty" style="${place(slot)}"></div>`;
+  const photo = photos.get(name);
+  const g = slotGeometry(slot, photo);
+  let html = `<div class="slot" data-i="${index}" data-name="${escapeHtml(name)}" style="${place(slot)}" title="${escapeHtml(name)}">`;
+  if (g.look.frame) {
+    html += `<div class="frame" style="${place(g.frame)}background:${g.look.frame};${g.look.shadow ? shadowCss : ''}${g.look.border ? 'outline:0.25mm solid #ccc;outline-offset:-0.25mm;' : ''}"></div>`;
+  }
+  if (!photo.url) {
+    html += `<div class="imgbox placeholder" draggable="true" style="${place(g.box)}">${photo.failed ? 'Cannot open this file' : 'Loading…'}`;
+  } else {
+    html += `<div class="imgbox" draggable="true" style="${place(g.box)}border-radius:${mm(g.radius)};${g.look.shadow && !g.look.frame ? shadowCss : ''}">`;
+    html += `<img src="${photo.url}" data-name="${escapeHtml(name)}" draggable="false" decoding="async" loading="lazy">`;
+  }
+  html += `<button class="hide-btn" data-hide="${escapeHtml(name)}" title="Hide this photo">×</button></div>`;
+  if (g.caption) {
+    html += `<div class="caption" style="${place(g.caption)}font-size:${mm(g.font)};line-height:${mm(g.caption.h)};color:${textColor(!!g.look.frame)}">${escapeHtml(captionText(name))}</div>`;
+  }
+  if (g.note) html += noteHtml(g.note, notes.photo[name], 'photo', name, 'Note…', !!g.look.frame);
+  return html + '</div>';
+}
+
+// lines stay at least one screen pixel thick when zoomed out
+const LINE_CSS = 'max(0.25mm, 1px / var(--zoom))';
+const DOT_CSS = 'max(0.35mm, 1px / var(--zoom))';
+
+function notePatternCss() {
+  const step = mm(NOTE_LINE);
+  const line = dir => `linear-gradient(to ${dir},transparent calc(${step} - ${LINE_CSS}),${RULE_COLOR} calc(${step} - ${LINE_CSS}))`;
+  switch (settings.noteLines) {
+    case 'lines': return `background-image:${line('bottom')};background-size:100% ${step};`;
+    case 'grid': return `background-image:${line('bottom')},${line('right')};background-size:${step} ${step};`;
+    case 'dots': return `background-image:radial-gradient(circle,${RULE_COLOR} ${DOT_CSS},transparent calc(${DOT_CSS} + 0.1mm));background-size:${step} ${step};`;
+    default: return '';
+  }
+}
+
+function noteHtml(rect, text, kind, id, placeholder, onFrame) {
+  const lines = notePatternCss();
+  return `<div class="note" contenteditable="plaintext-only" data-note-${kind}="${escapeHtml(id)}" data-placeholder="${placeholder}" `
+    + `style="${place(rect)}font-size:${mm(NOTE_FONT)};line-height:${mm(NOTE_LINE)};color:${textColor(onFrame)};${lines}">${escapeHtml(text || '')}</div>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+function render() {
+  document.documentElement.style.setProperty('--zoom', settings.zoom);
+  $('page-size').textContent = `@page { size: A4 ${settings.orientation}; margin: 0; }`;
+  $('empty').hidden = !!folderName;
+  const items = visible();
+  const { slots, note } = pageLayout();
+  const pageCount = folderName ? Math.max(1, Math.ceil(items.length / slots.length)) : 0;
+  $('info').textContent = folderName
+    ? `"${folderName}" - ${items.length} photos${hidden.size ? `, ${hidden.size} hidden` : ''} on ${pageCount} page${pageCount === 1 ? '' : 's'}`
+    : 'No folder loaded.';
+  $('save-info').hidden = !folderName;
+  $('save-info').textContent = folderHandle
+    ? `Order and notes are saved in ${STATE_FILE} inside this folder.`
+    : 'Order and notes are saved in this browser only. Use Chrome or Edge to save them in the folder.';
+
+  let html = '';
+  for (let p = 0; p < pageCount; p++) {
+    html += `<div class="sheet"><div class="label">Page ${p + 1} of ${pageCount}</div>`;
+    html += `<div class="page ${settings.orientation}" style="background:${settings.bg}">`;
+    slots.forEach((slot, s) => {
+      const i = p * slots.length + s;
+      html += slotHtml(slot, i, items[i]);
+    });
+    if (note) html += noteHtml(note, notes.page[p + 1], 'page', p + 1, 'Notes for this page…', false);
+    html += '</div></div>';
+  }
+  $('pages').innerHTML = html;
+
+  for (const name of order) loadPreview(photos.get(name));
+
+  const tray = $('hidden-tray');
+  tray.hidden = !hidden.size;
+  tray.querySelector('.thumbs').innerHTML = [...hidden]
+    .map(n => `<img src="${photos.get(n).url || ''}" data-unhide="${escapeHtml(n)}" title="${escapeHtml(n)}">`).join('');
+}
+
+let renderQueued = false;
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  requestAnimationFrame(() => { renderQueued = false; render(); });
+}
+
+// ---------- reordering ----------
+
+function slotPositions() {
+  const positions = new Map();
+  for (const el of pagesEl.querySelectorAll('.slot[data-name]')) positions.set(el.dataset.name, el.getBoundingClientRect());
+  return positions;
+}
+
+// slides every photo from its old place to its new one after a change of order
+function animateChange(change) {
+  const before = slotPositions();
+  change();
+  const page = pagesEl.querySelector('.page');
+  if (!page || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const zoom = page.getBoundingClientRect().width / (pageSize().W * 96 / 25.4);
+  for (const el of pagesEl.querySelectorAll('.slot[data-name]')) {
+    const a = before.get(el.dataset.name);
+    if (!a) {
+      el.animate([{ opacity: 0, transform: 'scale(0.85)' }, { opacity: 1, transform: 'none' }], { duration: 300, easing: 'ease-out' });
+      continue;
+    }
+    const b = el.getBoundingClientRect();
+    const dx = (a.left - b.left) / zoom, dy = (a.top - b.top) / zoom;
+    if (Math.abs(dx) < 1 && Math.abs(dy) < 1) continue;
+    el.style.zIndex = 5;
+    el.animate([
+      { transformOrigin: '0 0', transform: `translate(${dx}px, ${dy}px) scale(${a.width / b.width}, ${a.height / b.height})` },
+      { transformOrigin: '0 0', transform: 'none' },
+    ], { duration: 420, easing: 'cubic-bezier(0.2, 0.8, 0.2, 1)' }).finished.then(() => { el.style.zIndex = ''; }, () => {});
+  }
+}
+
+function movePhoto(fromIndex, toIndex) {
+  const items = visible();
+  const a = order.indexOf(items[fromIndex]);
+  const b = order.indexOf(items[Math.min(toIndex, items.length - 1)]);
+  if (a === b) return;
+  if (settings.dragMode === 'swap' && toIndex < items.length) {
+    [order[a], order[b]] = [order[b], order[a]];
+  } else {
+    const [name] = order.splice(a, 1);
+    order.splice(b, 0, name);
+  }
+  save();
+  animateChange(render);
+}
+
+const pagesEl = $('pages');
+pagesEl.addEventListener('dragstart', e => {
+  const slot = e.target.closest('.slot[data-i]');
+  if (!slot) return;
+  dragFrom = +slot.dataset.i;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(dragFrom));
+  slot.classList.add('dragging');
+});
+pagesEl.addEventListener('dragend', () => {
+  dragFrom = null;
+  pagesEl.querySelectorAll('.dragging, .over').forEach(el => el.classList.remove('dragging', 'over'));
+});
+pagesEl.addEventListener('dragover', e => {
+  const slot = e.target.closest('.slot');
+  if (!slot || dragFrom === null) return;
+  e.preventDefault();
+  if (!slot.classList.contains('over')) {
+    pagesEl.querySelectorAll('.over').forEach(el => el.classList.remove('over'));
+    slot.classList.add('over');
+  }
+});
+pagesEl.addEventListener('drop', e => {
+  const slot = e.target.closest('.slot');
+  if (!slot || dragFrom === null) return;
+  e.preventDefault();
+  const to = slot.dataset.i !== undefined ? +slot.dataset.i : Infinity;
+  const from = dragFrom;
+  dragFrom = null;
+  movePhoto(from, to);
+});
+let saveTimer = null;
+pagesEl.addEventListener('input', e => {
+  const el = e.target.closest('.note');
+  if (!el) return;
+  const text = el.innerText.replace(/\n$/, '');
+  const [store, id] = el.dataset.notePhoto !== undefined ? [notes.photo, el.dataset.notePhoto] : [notes.page, el.dataset.notePage];
+  if (text.trim()) store[id] = text;
+  else delete store[id];
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, 300);
+});
+pagesEl.addEventListener('click', e => {
+  const name = e.target.dataset.hide;
+  if (!name) return;
+  hidden.add(name);
+  save();
+  animateChange(render);
+});
+$('hidden-tray').addEventListener('click', e => {
+  const name = e.target.dataset.unhide;
+  if (!name) return;
+  hidden.delete(name);
+  save();
+  animateChange(render);
+});
+
+async function sortPhotos(sortKey, label) {
+  if (!folderName || !confirm(`Replace your custom order with ${label}?`)) return;
+  const keys = new Map(await Promise.all(order.map(async n => [n, await sortKey(n)])));
+  order.sort((a, b) => keys.get(a) < keys.get(b) ? -1 : keys.get(a) > keys.get(b) ? 1 : byName(a, b));
+  save();
+  animateChange(render);
+}
+$('sort-name').onclick = () => sortPhotos(n => 0, 'sorting by file name');
+$('sort-date').onclick = () => sortPhotos(n => photos.get(n).file.lastModified, 'sorting by file date');
+
+// ---------- settings ----------
+
+for (const [key, l] of Object.entries(LAYOUTS)) $('layout').add(new Option(l.name, key));
+for (const [key, l] of Object.entries(LOOKS)) $('look').add(new Option(l.name, key));
+
+const CONTROLS = ['layout', 'look', 'fit', 'orientation', 'margin', 'gap', 'bg', 'captions', 'pageNotes', 'pageNoteSize', 'photoNoteSize', 'noteLines', 'dragMode', 'zoom'];
+
+function syncControls() {
+  for (const key of CONTROLS) {
+    const el = $(key);
+    if (el.type === 'checkbox') el.checked = settings[key];
+    else el.value = settings[key];
+    if ($(key + '-val')) $(key + '-val').textContent = key === 'photoNoteSize' && !settings[key] ? 'off' : `${settings[key]} mm`;
+  }
+  $('pageNoteSize').disabled = settings.pageNotes === 'none';
+}
+
+for (const key of CONTROLS) {
+  $(key).addEventListener('input', e => {
+    const el = e.target;
+    settings[key] = el.type === 'checkbox' ? el.checked : el.type === 'range' ? +el.value : el.value;
+    syncControls();
+    save();
+    render();
+  });
+}
+
+// ---------- export ----------
+
+function wrapLines(ctx, text, width) {
+  const lines = [];
+  for (const paragraph of text.split('\n')) {
+    let line = '';
+    for (const word of paragraph.split(' ')) {
+      const longer = line ? line + ' ' + word : word;
+      if (line && ctx.measureText(longer).width > width) {
+        lines.push(line);
+        line = word;
+      } else line = longer;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+function drawNote(ctx, r, text, scale, onFrame) {
+  const lineH = NOTE_LINE * scale, font = NOTE_FONT * scale;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(r.x, r.y, r.w, r.h);
+  ctx.clip();
+  const pattern = settings.noteLines;
+  ctx.fillStyle = RULE_COLOR;
+  const t = 0.25 * scale;
+  if (pattern === 'lines' || pattern === 'grid') {
+    for (let y = r.y + lineH - t; y <= r.y + r.h; y += lineH) ctx.fillRect(r.x, y, r.w, t);
+  }
+  if (pattern === 'grid') {
+    for (let x = r.x + lineH - t; x <= r.x + r.w; x += lineH) ctx.fillRect(x, r.y, t, r.h);
+  }
+  if (pattern === 'dots') {
+    for (let y = r.y + lineH / 2; y < r.y + r.h; y += lineH) {
+      for (let x = r.x + lineH / 2; x < r.x + r.w; x += lineH) {
+        ctx.beginPath();
+        ctx.arc(x, y, 0.35 * scale, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  if (text) {
+    ctx.fillStyle = textColor(onFrame);
+    ctx.font = `${font}px ${FONT}`;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    wrapLines(ctx, text, r.w).forEach((line, k) => {
+      ctx.fillText(line, r.x, r.y + (k + 1) * lineH - (lineH - font) / 2 - 0.2 * font);
+    });
+  }
+  ctx.restore();
+}
+
+function drawPage(ctx, scale, names, layout, pageNumber) {
+  const { slots, note } = layout;
+  ctx.fillStyle = settings.bg;
+  ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  if (note) drawNote(ctx, { x: note.x * scale, y: note.y * scale, w: note.w * scale, h: note.h * scale }, notes.page[pageNumber], scale, false);
+  return slots.reduce((done, slot, s) => done.then(async () => {
+    const name = names[s];
+    if (!name) return;
+    const photo = photos.get(name);
+    let bitmap;
+    try {
+      bitmap = await fullImage(photo);
+    } catch {
+      return;
+    }
+    photo.w = bitmap.width;
+    photo.h = bitmap.height;
+    const g = slotGeometry(slot, photo);
+    const px = r => ({ x: (slot.x + r.x) * scale, y: (slot.y + r.y) * scale, w: r.w * scale, h: r.h * scale });
+    const withShadow = draw => {
+      ctx.save();
+      ctx.shadowColor = SHADOW.color;
+      ctx.shadowOffsetY = SHADOW.y * scale;
+      ctx.shadowBlur = SHADOW.blur * scale;
+      draw();
+      ctx.restore();
+    };
+
+    if (g.look.frame) {
+      const f = px(g.frame);
+      const fill = () => { ctx.fillStyle = g.look.frame; ctx.fillRect(f.x, f.y, f.w, f.h); };
+      g.look.shadow ? withShadow(fill) : fill();
+      if (g.look.border) {
+        const b = 0.25 * scale;
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = b;
+        ctx.strokeRect(f.x + b / 2, f.y + b / 2, f.w - b, f.h - b);
+      }
+    }
+
+    const r = px(g.box);
+    const radius = g.radius * scale;
+    if (g.look.shadow && !g.look.frame) {
+      withShadow(() => { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.roundRect(r.x, r.y, r.w, r.h, radius); ctx.fill(); });
+    }
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(r.x, r.y, r.w, r.h, radius);
+    ctx.clip();
+    const d = fitRect(r, bitmap.width, bitmap.height, 'cover');
+    ctx.drawImage(bitmap, d.x, d.y, d.w, d.h);
+    ctx.restore();
+    bitmap.close();
+
+    if (g.caption) {
+      const c = px(g.caption);
+      ctx.fillStyle = textColor(!!g.look.frame);
+      ctx.font = `${g.font * scale}px ${FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      let text = captionText(name);
+      while (text.length > 1 && ctx.measureText(text).width > c.w) text = text.slice(0, -2) + '…';
+      ctx.fillText(text, c.x + c.w / 2, c.y + c.h / 2);
+    }
+    if (g.note) drawNote(ctx, px(g.note), notes.photo[name], scale, !!g.look.frame);
+  }), Promise.resolve());
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+// uncompressed zip, JPGs do not get smaller anyway
+async function makeZip(files) {
+  const now = new Date();
+  const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
+  const date = ((now.getFullYear() - 1980) << 9) | ((now.getMonth() + 1) << 5) | now.getDate();
+  const parts = [], central = [];
+  let offset = 0;
+  for (const { name, blob } of files) {
+    const data = new Uint8Array(await blob.arrayBuffer());
+    const nameBytes = new TextEncoder().encode(name);
+    const crc = crc32(data);
+    const local = new DataView(new ArrayBuffer(30));
+    local.setUint32(0, 0x04034b50, true);
+    local.setUint16(4, 20, true);
+    local.setUint16(6, 0x0800, true);
+    local.setUint16(10, time, true);
+    local.setUint16(12, date, true);
+    local.setUint32(14, crc, true);
+    local.setUint32(18, data.length, true);
+    local.setUint32(22, data.length, true);
+    local.setUint16(26, nameBytes.length, true);
+    parts.push(local, nameBytes, data);
+
+    const entry = new DataView(new ArrayBuffer(46));
+    entry.setUint32(0, 0x02014b50, true);
+    entry.setUint16(4, 20, true);
+    entry.setUint16(6, 20, true);
+    entry.setUint16(8, 0x0800, true);
+    entry.setUint16(12, time, true);
+    entry.setUint16(14, date, true);
+    entry.setUint32(16, crc, true);
+    entry.setUint32(20, data.length, true);
+    entry.setUint32(24, data.length, true);
+    entry.setUint16(28, nameBytes.length, true);
+    entry.setUint32(42, offset, true);
+    central.push(entry, nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const centralSize = central.reduce((sum, part) => sum + part.byteLength, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true);
+  end.setUint16(8, files.length, true);
+  end.setUint16(10, files.length, true);
+  end.setUint32(12, centralSize, true);
+  end.setUint32(16, offset, true);
+  return new Blob([...parts, ...central, end], { type: 'application/zip' });
+}
+
+function download(blob, fileName) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+const EXPORTED_FILE = /-page-\d+\.jpg$|-pages\.zip$/;
+
+async function saveToExportFolder(files) {
+  const dir = await folderHandle.getDirectoryHandle('export', { create: true });
+  const old = [];
+  for await (const name of dir.keys()) if (EXPORTED_FILE.test(name)) old.push(name);
+  for (const name of old) await dir.removeEntry(name);
+  for (const { name, blob } of files) await writeFile(dir, name, blob);
+}
+
+async function exportPages() {
+  if (!folderName) return;
+  const btn = $('export-jpg');
+  btn.disabled = true;
+  busy = true;
+  const { W, H } = pageSize();
+  const scale = EXPORT_DPI / 25.4;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(W * scale);
+  canvas.height = Math.round(H * scale);
+  const ctx = canvas.getContext('2d');
+  const items = visible();
+  const layout = pageLayout();
+  const perPage = layout.slots.length;
+  const pageCount = Math.ceil(items.length / perPage);
+  try {
+    const pages = [];
+    for (let p = 0; p < pageCount; p++) {
+      btn.textContent = `Exporting page ${p + 1} of ${pageCount}…`;
+      await drawPage(ctx, scale, items.slice(p * perPage, (p + 1) * perPage), layout, p + 1);
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.92));
+      pages.push({ name: `${folderName}-page-${String(p + 1).padStart(2, '0')}.jpg`, blob });
+    }
+    btn.textContent = 'Creating zip…';
+    const zip = { name: `${folderName}-pages.zip`, blob: await makeZip(pages) };
+    if (folderHandle) {
+      await saveToExportFolder([...pages, zip]);
+      btn.textContent = `Saved ${pageCount} pages + zip to "${folderName}/export" ✓`;
+    } else {
+      download(zip.blob, zip.name);
+      btn.textContent = `Downloaded ${zip.name} ✓`;
+    }
+  } catch (e) {
+    alert('Export failed: ' + e.message);
+  } finally {
+    btn.disabled = false;
+    busy = false;
+    setTimeout(() => { btn.textContent = 'Export pages'; }, 6000);
+  }
+}
+
+$('pick').onclick = $('pick-big').onclick = pickFolder;
+$('export-jpg').onclick = exportPages;
+$('print').onclick = () => window.print();
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+
+syncControls();
+render();
+offerReopen();
+</script>
+</body>
+</html>

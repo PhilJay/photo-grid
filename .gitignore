@@ -1,0 +1,15 @@
+# Never commit photos or exports
+photos/
+export/
+*.jpg
+*.jpeg
+*.JPG
+*.JPEG
+*.heic
+*.HEIC
+*.heif
+*.png
+*.zip
+photo-grid.json
+.cache/
+.DS_Store
