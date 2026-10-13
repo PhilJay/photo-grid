@@ -66,6 +66,12 @@
   .progress .bar div { height: 100%; width: 0; background: #3b82f6; transition: width .2s; }
   .hide-btn { position: absolute; top: 2mm; right: 2mm; width: 9mm; height: 9mm; padding: 0; border-radius: 50%; font-size: 6mm; line-height: 1; background: rgba(0,0,0,.6); border: none; color: #fff; display: none; z-index: 1; }
   .slot:hover .hide-btn { display: block; }
+  .crop-btn { position: absolute; top: 2mm; right: 12.5mm; width: 9mm; height: 9mm; padding: 0; border-radius: 50%; font-size: 5mm; line-height: 1; background: rgba(0,0,0,.6); border: none; color: #fff; display: none; z-index: 1; }
+  .slot:hover .crop-btn { display: block; }
+  .imgbox.cropping { cursor: move; touch-action: none; outline: 1.2mm solid #3b82f6; outline-offset: 0.6mm; z-index: 3; }
+  .crop-bar { position: absolute; left: 50%; bottom: calc(8px / var(--zoom)); transform: translateX(-50%); display: flex; gap: calc(6px / var(--zoom)); z-index: 2; white-space: nowrap; }
+  .crop-bar button, .crop-bar span { font-size: calc(12px / var(--zoom)); padding: calc(4px / var(--zoom)) calc(10px / var(--zoom)); border-radius: calc(12px / var(--zoom)); background: rgba(0,0,0,.7); color: #fff; border: none; }
+  .drop-marker { position: absolute; width: 1.6mm; margin-left: -0.8mm; border-radius: 0.8mm; background: #3b82f6; box-shadow: 0 0 0 0.6mm rgba(59,130,246,.3); pointer-events: none; z-index: 4; }
   #hidden-tray { margin-top: 40px; padding-top: 16px; border-top: 1px solid #44464d; }
   #hidden-tray .thumbs { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
   #hidden-tray img { width: 80px; height: 80px; object-fit: cover; border-radius: 4px; cursor: pointer; opacity: .6; }
@@ -75,7 +81,8 @@
     :root { --zoom: 1 !important; }
     * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     body { display: block; height: auto; background: none; }
-    aside, .sheet .label, #hidden-tray, .hide-btn { display: none !important; }
+    aside, .sheet .label, #hidden-tray, .hide-btn, .crop-btn, .crop-bar, .drop-marker { display: none !important; }
+    .imgbox.cropping { outline: none; }
     main { padding: 0; overflow: visible; }
     #pages { display: block; }
     .sheet { display: block; }
@@ -139,9 +146,7 @@
   </div>
 
   <div class="group">
-    <label>Dragging a photo onto another
-      <select id="dragMode"><option value="move">moves it there</option><option value="swap">swaps the two</option></select>
-    </label>
+    <div class="info">Drop a photo on another to swap them, or between two photos to insert it there.</div>
     <label>Sort photos
       <select id="sort">
         <option value="">Choose…</option>
@@ -231,7 +236,7 @@ const FONT = 'system-ui, -apple-system, sans-serif';
 
 const DEFAULT_SETTINGS = {
   layout: 'g2x3', look: 'clean', fit: 'cover', orientation: 'portrait', margin: 10, gap: 4, bg: '#ffffff', captions: false,
-  pageNotes: 'none', pageNoteSize: 40, photoNotes: 'off', photoNoteSize: 14, noteLines: 'lines', dragMode: 'move', zoom: 0.5,
+  pageNotes: 'none', pageNoteSize: 40, photoNotes: 'off', photoNoteSize: 14, noteLines: 'lines', zoom: 0.5,
 };
 
 let folderName = null;
@@ -239,6 +244,9 @@ let photos = new Map(); // name -> { file, url, w, h }
 let order = [];
 let hidden = new Set();
 let notes = { photo: {}, page: {} };
+// where each cropped photo is anchored, 0 to 1 per axis like CSS object-position
+let crops = {};
+let cropping = null;
 // every project is its own arrangement of the same folder; the open one lives in order, hidden, notes and settings
 let projects = {};
 let projectName = null;
@@ -263,7 +271,7 @@ let folderHandle = null; // only set when the folder can be written to
 let unsaved = false;
 
 function projectState() {
-  return { order, hidden: [...hidden], notes, settings };
+  return { order, hidden: [...hidden], notes, settings, crops };
 }
 
 function currentState() {
@@ -478,6 +486,8 @@ function closeFolder() {
   projectName = null;
   order = [];
   hidden = new Set();
+  crops = {};
+  cropping = null;
   unsaved = false;
 }
 
@@ -507,6 +517,7 @@ function applyList(name, entries, savedState) {
     baseHidden = new Set(project?.hidden || []);
     settings = withDefaults(project?.settings);
     notes = { photo: {}, page: {}, ...project?.notes };
+    crops = { ...project?.crops };
   }
   const known = baseOrder.filter(n => next.has(n));
   const knownSet = new Set(known);
@@ -740,10 +751,19 @@ function slotHtml(slot, name, withText) {
     const text = photo.failed ? 'Cannot open this file' : photo.converting ? 'Converting HEIC…' : 'Loading…';
     html += `<div class="imgbox placeholder" draggable="true" style="${place(g.box)}">${text}`;
   } else {
-    html += `<div class="imgbox" draggable="true" style="${place(g.box)}border-radius:${mm(g.radius)};${g.look.shadow && !g.look.frame ? shadowCss : ''}">`;
-    html += `<img src="${photo.url}" data-name="${escapeHtml(name)}" draggable="false" decoding="async" loading="lazy">`;
+    const isCropping = cropping === name;
+    const crop = crops[name];
+    const position = crop ? `object-position:${(crop.x * 100).toFixed(2)}% ${(crop.y * 100).toFixed(2)}%;` : '';
+    html += `<div class="imgbox${isCropping ? ' cropping' : ''}" draggable="${!isCropping}" style="${place(g.box)}border-radius:${mm(g.radius)};${g.look.shadow && !g.look.frame ? shadowCss : ''}">`;
+    html += `<img src="${photo.url}" data-name="${escapeHtml(name)}" draggable="false" decoding="async" loading="lazy" style="${position}">`;
+    if (isCropping) {
+      html += '<div class="crop-bar"><span>Drag to move the photo</span><button data-crop-reset>Reset</button><button data-crop-done>Done</button></div>';
+    } else if (settings.fit === 'cover') {
+      html += `<button class="crop-btn" data-crop="${escapeHtml(name)}" title="Move the photo inside its frame">✥</button>`;
+    }
   }
-  html += `<button class="hide-btn" data-hide="${escapeHtml(name)}" title="Hide this photo">×</button></div>`;
+  if (cropping !== name) html += `<button class="hide-btn" data-hide="${escapeHtml(name)}" title="Hide this photo">×</button>`;
+  html += '</div>';
   if (g.caption) {
     html += `<div class="caption" style="${place(g.caption)}font-size:${mm(g.font)};line-height:${mm(g.caption.h)};color:${textColor(!!g.look.frame)}">${escapeHtml(captionText(name))}</div>`;
   }
@@ -855,6 +875,7 @@ function render() {
     }
     sheets[p].querySelector('.label').textContent = `Page ${p + 1} of ${pageCount}`;
     const page = sheets[p].querySelector('.page');
+    page.dataset.p = p;
     if (page.className !== `page ${settings.orientation}`) page.className = `page ${settings.orientation}`;
     setStyle(page, `background:${settings.bg}`);
     const children = slots.map((slot, s) => {
@@ -929,19 +950,71 @@ function animateChange(change) {
   }
 }
 
-function movePhoto(fromIndex, toIndex) {
+function swapPhotos(from, to) {
   const items = visible();
-  const a = order.indexOf(items[fromIndex]);
-  const b = order.indexOf(items[Math.min(toIndex, items.length - 1)]);
-  if (a === b) return;
-  if (settings.dragMode === 'swap' && toIndex < items.length) {
-    [order[a], order[b]] = [order[b], order[a]];
-  } else {
-    const [name] = order.splice(a, 1);
-    order.splice(b, 0, name);
-  }
+  if (from === to || !items[to]) return;
+  const a = order.indexOf(items[from]), b = order.indexOf(items[to]);
+  [order[a], order[b]] = [order[b], order[a]];
   save();
   animateChange(render);
+}
+
+// "to" is the gap index: 0 is before the first photo, items.length after the last
+function insertPhoto(from, to) {
+  const items = visible();
+  if (to === from || to === from + 1) return;
+  const name = items[from];
+  const before = items[to];
+  order.splice(order.indexOf(name), 1);
+  order.splice(before ? order.indexOf(before) : order.length, 0, name);
+  save();
+  animateChange(render);
+}
+
+// the middle of a photo swaps, its outer edges and the gaps insert
+const INSERT_EDGE = 0.22;
+
+function dropTargetAt(e) {
+  const page = e.target.closest?.('.page');
+  if (!page) return null;
+  const { slots } = pageLayout();
+  const bounds = page.getBoundingClientRect();
+  const perPx = pageSize().W / bounds.width;
+  const x = (e.clientX - bounds.left) * perPx, y = (e.clientY - bounds.top) * perPx;
+  const count = visible().length;
+  let best = null;
+  slots.forEach((slot, k) => {
+    const index = +page.dataset.p * slots.length + k;
+    if (index > count) return;
+    const dx = Math.max(slot.x - x, 0, x - slot.x - slot.w), dy = Math.max(slot.y - y, 0, y - slot.y - slot.h);
+    const distance = Math.hypot(dx, dy);
+    if (!best || distance < best.distance) best = { slot, index, distance };
+  });
+  if (!best) return null;
+  const { slot, index, distance } = best;
+  const half = settings.gap / 2;
+  if (index === count) return { mode: 'insert', index, page, marker: { x: slot.x - half, y: slot.y, h: slot.h } };
+  const edge = Math.min(slot.w * INSERT_EDGE, 15);
+  if (distance === 0 && x > slot.x + edge && x < slot.x + slot.w - edge) return { mode: 'swap', index };
+  const after = x > slot.x + slot.w / 2;
+  return { mode: 'insert', index: after ? index + 1 : index, page, marker: { x: after ? slot.x + slot.w + half : slot.x - half, y: slot.y, h: slot.h } };
+}
+
+const dropMarker = document.createElement('div');
+dropMarker.className = 'drop-marker';
+
+function showDropTarget(target) {
+  pagesEl.querySelectorAll('.over').forEach(el => el.classList.remove('over'));
+  if (target?.mode === 'swap') {
+    dropMarker.remove();
+    pagesEl.querySelector(`.slot[data-i="${target.index}"]`)?.classList.add('over');
+  } else if (target?.mode === 'insert') {
+    const m = target.marker;
+    dropMarker.style.cssText = `left:${mm(m.x)};top:${mm(m.y)};height:${mm(m.h)}`;
+    if (dropMarker.parentElement !== target.page) target.page.append(dropMarker);
+  } else {
+    dropMarker.remove();
+  }
 }
 
 pagesEl.addEventListener('dragstart', e => {
@@ -954,26 +1027,83 @@ pagesEl.addEventListener('dragstart', e => {
 });
 pagesEl.addEventListener('dragend', () => {
   dragFrom = null;
-  pagesEl.querySelectorAll('.dragging, .over').forEach(el => el.classList.remove('dragging', 'over'));
+  showDropTarget(null);
+  pagesEl.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
 });
 pagesEl.addEventListener('dragover', e => {
-  const slot = e.target.closest('.slot');
-  if (!slot || dragFrom === null) return;
-  e.preventDefault();
-  if (!slot.classList.contains('over')) {
-    pagesEl.querySelectorAll('.over').forEach(el => el.classList.remove('over'));
-    slot.classList.add('over');
-  }
+  if (dragFrom === null) return;
+  const target = dropTargetAt(e);
+  showDropTarget(target);
+  if (target) e.preventDefault();
+});
+pagesEl.addEventListener('dragleave', e => {
+  if (!pagesEl.contains(e.relatedTarget)) showDropTarget(null);
 });
 pagesEl.addEventListener('drop', e => {
-  const slot = e.target.closest('.slot');
-  if (!slot || dragFrom === null) return;
-  e.preventDefault();
-  const to = slot.dataset.i !== undefined ? +slot.dataset.i : Infinity;
+  if (dragFrom === null) return;
+  const target = dropTargetAt(e);
   const from = dragFrom;
   dragFrom = null;
-  movePhoto(from, to);
+  showDropTarget(null);
+  if (!target) return;
+  e.preventDefault();
+  if (target.mode === 'swap') swapPhotos(from, target.index);
+  else insertPhoto(from, target.index);
 });
+
+// ---------- moving a photo inside its frame ----------
+
+function startCrop(name) {
+  cropping = name;
+  render();
+}
+
+function endCrop() {
+  if (!cropping) return;
+  cropping = null;
+  render();
+}
+
+pagesEl.addEventListener('dblclick', e => {
+  const slot = e.target.closest('.imgbox:not(.placeholder)')?.closest('.slot[data-name]');
+  if (slot && settings.fit === 'cover' && cropping !== slot.dataset.name) startCrop(slot.dataset.name);
+});
+
+pagesEl.addEventListener('pointerdown', e => {
+  const box = e.target.closest('.imgbox.cropping');
+  if (!box || e.target.closest('button')) return;
+  e.preventDefault();
+  const name = cropping;
+  const photo = photos.get(name);
+  const img = box.querySelector('img');
+  const bounds = box.getBoundingClientRect();
+  const scale = Math.max(bounds.width / photo.w, bounds.height / photo.h);
+  const spareX = photo.w * scale - bounds.width, spareY = photo.h * scale - bounds.height;
+  const start = { x: e.clientX, y: e.clientY, crop: { x: 0.5, y: 0.5, ...crops[name] } };
+  const clamp = v => Math.min(1, Math.max(0, v));
+  box.setPointerCapture(e.pointerId);
+  const move = ev => {
+    const crop = {
+      x: spareX > 1 ? clamp(start.crop.x - (ev.clientX - start.x) / spareX) : 0.5,
+      y: spareY > 1 ? clamp(start.crop.y - (ev.clientY - start.y) / spareY) : 0.5,
+    };
+    crops[name] = crop;
+    img.style.objectPosition = `${crop.x * 100}% ${crop.y * 100}%`;
+  };
+  box.addEventListener('pointermove', move);
+  box.addEventListener('pointerup', () => {
+    box.removeEventListener('pointermove', move);
+    save();
+  }, { once: true });
+});
+
+document.addEventListener('click', e => {
+  if (cropping && !e.target.closest('.imgbox.cropping, [data-crop]')) endCrop();
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') endCrop();
+});
+
 let saveTimer = null;
 pagesEl.addEventListener('input', e => {
   const el = e.target.closest('.note');
@@ -986,9 +1116,16 @@ pagesEl.addEventListener('input', e => {
   saveTimer = setTimeout(save, 300);
 });
 pagesEl.addEventListener('click', e => {
-  const name = e.target.dataset.hide;
-  if (!name) return;
-  hidden.add(name);
+  const { hide, crop } = e.target.dataset;
+  if (crop) return startCrop(crop);
+  if (e.target.dataset.cropDone !== undefined) return endCrop();
+  if (e.target.dataset.cropReset !== undefined) {
+    delete crops[cropping];
+    save();
+    return render();
+  }
+  if (!hide) return;
+  hidden.add(hide);
   save();
   animateChange(render);
 });
@@ -1039,6 +1176,8 @@ function openProject(name) {
   order = [...known, ...[...photos.keys()].filter(n => !knownSet.has(n)).sort(byName)];
   hidden = new Set(project.hidden.filter(n => photos.has(n)));
   notes = { photo: {}, page: {}, ...project.notes };
+  crops = { ...project.crops };
+  cropping = null;
   settings = withDefaults(project.settings);
   save();
   syncControls();
@@ -1100,7 +1239,7 @@ function syncProjects() {
 for (const [key, l] of Object.entries(LAYOUTS)) $('layout').add(new Option(l.name, key));
 for (const [key, l] of Object.entries(LOOKS)) $('look').add(new Option(l.name, key));
 
-const CONTROLS = ['layout', 'look', 'fit', 'orientation', 'margin', 'gap', 'bg', 'captions', 'pageNotes', 'pageNoteSize', 'photoNotes', 'photoNoteSize', 'noteLines', 'dragMode', 'zoom'];
+const CONTROLS = ['layout', 'look', 'fit', 'orientation', 'margin', 'gap', 'bg', 'captions', 'pageNotes', 'pageNoteSize', 'photoNotes', 'photoNoteSize', 'noteLines', 'zoom'];
 
 function syncControls() {
   for (const key of CONTROLS) {
@@ -1257,6 +1396,9 @@ function drawPage(ctx, scale, names, layout, pageNumber) {
     ctx.roundRect(r.x, r.y, r.w, r.h, radius);
     ctx.clip();
     const d = fitRect(r, bitmap.width, bitmap.height, 'cover');
+    const crop = crops[name] || { x: 0.5, y: 0.5 };
+    d.x = r.x + (r.w - d.w) * crop.x;
+    d.y = r.y + (r.h - d.h) * crop.y;
     ctx.drawImage(bitmap, d.x, d.y, d.w, d.h);
     ctx.restore();
     bitmap.close();
